@@ -22,7 +22,7 @@
   var DEBUG_MOBILE_LAYOUT = false;
 
   var Game = {
-    VERSION: '0.1.1',
+    VERSION: '0.1.2',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -187,7 +187,8 @@
 
     /* -------------------------------------------------------------- update */
     update: function (dt) {
-      // PHASE 5 이후: 적 / 동료 / 전투 갱신이 여기에 들어간다.
+      // PHASE 6 이후: 적 / 동료 갱신이 여기에 들어간다. 공격 상태 자체는
+      // player.js 의 update() 안에서 combat.js 를 통해 함께 진행된다.
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       this.updateCamera();
@@ -251,6 +252,10 @@
       }
 
       MG.Map.renderFireflies(ctx, cam, t);
+
+      // DEBUG_COMBAT 이 true 일 때만 그려진다 (combat.js 내부에서 조기 반환) —
+      // 카메라 변환이 아직 적용된 상태여야 히트박스가 월드 좌표와 정확히 겹친다.
+      if (MG.Combat && MG.Combat.renderDebug) MG.Combat.renderDebug(ctx, MG.Player);
 
       ctx.restore();
 

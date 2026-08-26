@@ -8,11 +8,36 @@ Project:
 
 Current Version:
 
-v0.1.1
+v0.1.2
 
 Current Phase:
 
-Portrait Conversion — **COMPLETE** (implemented and verified by Claude Code)
+Phase 5 — Real-Time Sword Combat — **COMPLETE** (implemented and verified by Claude Code)
+
+Implemented:
+
+* sword attack (SPACE on desktop, existing bottom-right button on mobile)
+* directional attack (locked to facing at the moment the swing starts)
+* attack timing (0.22s duration / 0.30s cooldown, delta-time based, not frame-count based)
+* attack cooldown (spam-proof — verified a press during cooldown does not restart the swing)
+* attack hitbox (`MG.Combat.getAttackHitbox()`, world-space, active only mid-swing)
+* mobile attack input (existing Phase 3 button + pointer id, unchanged)
+* desktop attack input (SPACE, reused existing key-blocking)
+* sword visual animation (rotating blade + 2-ghost trail + brief tip glint)
+* attack sound (procedural noise-burst "whoosh" via Web Audio, fails silently if unavailable)
+
+Not implemented (by design — later phases):
+
+* enemies / Mossling
+* enemy HP / damage / knockback / defeat
+* player HP / damage / invincibility
+* companion / Moski
+* treasure
+* boss
+
+Next:
+
+Phase 6 — Mossling enemy
 
 ---
 
@@ -190,16 +215,77 @@ flip portrait→landscape→portrait recalculates layout without reload or
 losing player/map state, desktop keyboard still works with the portrait
 stage centered (not stretched to 16:9).
 
-Known limitation: the existing start-area spawn (200, 706) sits close to the
-map's south edge (map height 810 vs camera height 640 ⇒ only 170px of
-vertical clamp headroom). The camera correctly clamps there, so the player
-renders low on screen at spawn (~84% down) instead of centered. This is
-inherent to pairing the existing Phase 4 map with a much taller portrait
-camera, not a bug — per the conversion brief the map/spawn were not to be
-altered. It reads fine visually (screenshot checked) and no HUD/attack-button
-overlap occurs; only the *invisible* joystick hit-zone's rectangle
-technically overlaps that screen region. Revisit if a future phase reshapes
-the start area.
+Known limitation (Fixed): The existing start-area spawn was previously at (200, 706), close to the map's south edge, which caused the camera to clamp to the bottom edge and render the player very low on screen (84% down). This has been resolved by adjusting the initial spawn point up slightly to (200, 590) while remaining inside the starting glade. The player now appears at a visually pleasing 65% down the screen, solving the framing issue while strictly preserving the existing map layout and camera logic.
+
+---
+
+# COMPLETED: PHASE 5 — REAL-TIME SWORD COMBAT v0.1.2
+
+Goal (achieved):
+
+A directional sword attack the player can trigger without leaving the field
+(no battle screen), usable simultaneously with movement on both desktop and
+mobile (two-thumb: move + attack at once).
+
+Files changed: `js/combat.js` (was an empty stub — now owns attack timing,
+world-space hitbox, and a `DEBUG_COMBAT` debug renderer), `js/audio.js` (was
+an empty stub — now a minimal Web-Audio noise-burst "whoosh", fails silently
+if audio is unavailable), `js/player.js` (new `attacking`/`attackFacing`/
+`attackT`/`cooldownT` fields, movement-speed multiplier while attacking,
+facing frozen during the swing, sword-swing render overlay, idle sword hidden
+while swinging), `js/game.js` (VERSION → 0.1.2, wired `MG.Combat.renderDebug`
+into the world-space render pass), `index.html`/`README.md` (version text).
+`js/input.js` needed **no** changes — `MG.Input.attackPressed` already
+existed as a one-frame edge trigger from Phase 3 and combat consumes it as-is.
+Map/collision/camera untouched.
+
+Key design choices:
+
+* Attack direction locks to `player.facing` the instant the swing starts
+  (`attackFacing`), and `facing` itself stops updating from movement input
+  while `attacking` is true — so the body and the sword can never point
+  different ways mid-swing, even if the player nudges the stick/WASD.
+  Movement (position) is NOT frozen, only slowed (`MOVE_MULTIPLIER = 0.7`).
+* All timing is delta-time (`ATTACK_DURATION = 0.22s`, `ATTACK_COOLDOWN =
+  0.30s`), not frame counts.
+* `MG.Combat.getAttackHitbox(player)` returns world-space `{x,y,w,h}` (or
+  `null` outside the active window) — Phase 6 can call this directly against
+  Mossling AABBs without any coordinate conversion.
+* `DEBUG_COMBAT` (const, default `false`, top of `combat.js`) draws the
+  hitbox rect + attack/cooldown state text in world space when flipped on.
+
+Verified (synthetic Pointer/Keyboard events, since this session's browser
+preview has no screenshot compositing): SPACE starts the attack on the exact
+frame pressed; holding SPACE or changing direction mid-swing does not restart
+the attack or rotate it; movement distance during a 9-frame attack window was
+exactly 0.700× the un-attacked distance (matches `MOVE_MULTIPLIER` exactly);
+a second SPACE press during cooldown is ignored (`attacking` stays `false`);
+mobile joystick (pointerId 1) and attack button (pointerId 2) held
+simultaneously both stay live and independent, and releasing one doesn't
+affect the other; debug hitbox rect visually lines up with the rendered
+blade (checked via `DEBUG_COMBAT = true` screenshot, reverted after); no new
+console errors; v0.1.1 regressions re-checked and still pass (portrait load,
+no rotation warning, river/tree collision, camera clamp, no page scroll).
+
+Known limitation: no enemies exist yet, so `getAttackHitbox()` is exercised
+by tests/debug only — it has never been checked against a second AABB in
+anger. Confirm the exact expected size/reach still feels right once Mossling
+exists in Phase 6; the numbers (`REACH=14, WIDE=15, GAP=3`) are a first pass,
+not final-tuned.
+
+**Polish fix (same v0.1.2, no version bump):** the down/up swing pivots in
+`Player.drawAttackSwing()` (`js/player.js`) originally didn't match the idle
+sword's side, so the blade appeared to jump to the other hand when an attack
+started facing down. Fixed by pivoting `down` to the same side as
+`drawFront()`'s idle sword (`cx-`) and `up` to the mirrored side (`cx+`,
+since the back view is the character turned 180°) — and added a small idle
+hilt to `drawBack()` (previously drew no sword at all) so the "returns to
+the same hand" rule has something to return to when facing up. `left`/
+`right` were already consistent (both idle and attack already used the
+same front-hand-relative offset) and were not touched. `combat.js` hitbox
+math was **not** touched — only the visual pivot in `player.js` moved; if
+you're comparing hitbox x/y against pre-fix notes elsewhere, the numbers
+are unchanged.
 
 ---
 
@@ -229,12 +315,14 @@ Must change:
 
 # DO NOT IMPLEMENT YET
 
+Phase 5 (sword attack itself) is done — see COMPLETED: PHASE 5 above.
+
 Do NOT implement:
 
-* Phase 5 combat
-* enemy combat AI
-* damage
-* companion
+* Mossling / enemy AI
+* enemy HP / damage / knockback / defeat
+* player HP / damage / invincibility
+* companion / Moski
 * treasure
 * quests
 * bosses
@@ -246,17 +334,11 @@ Those belong to later phases.
 
 # CURRENT NEXT PHASE
 
-After Portrait Conversion is stable:
+After Phase 5 (sword combat) is stable:
 
-## Phase 5
+## Phase 6
 
-Real-time sword combat
-
-*
-
-First enemy:
-
-Mossling
+First enemy: Mossling
 
 Expected systems:
 
@@ -323,6 +405,15 @@ Orientation-blocking overlay/pause removed. Phase 1–4 systems (map, player,
 collision, camera, joystick, keyboard) preserved unchanged in logic; only
 resolution/camera constants and UI positioning changed. Completed by Claude Code.
 
+## v0.1.2
+
+Phase 5 — real-time sword combat. Directional attack (SPACE / existing mobile
+button), 0.22s swing / 0.30s cooldown (delta-time, not frame-count), 0.7×
+movement speed while attacking, facing locked to the swing's starting
+direction, world-space `MG.Combat.getAttackHitbox()` ready for Phase 6,
+procedural swing sound. No enemies, no damage, no HP — attack-only. Map,
+collision, camera, and portrait layout untouched. Completed by Claude Code.
+
 ---
 
 # HANDOFF STATUS
@@ -333,8 +424,10 @@ AI-assisted development workflow
 
 Current task:
 
-Portrait Conversion v0.1.1 — done, stable. Next task is Phase 5 (real-time
-sword combat + first Mossling), not started.
+Phase 5 (real-time sword combat) v0.1.2 — done, stable. Not yet committed to
+git (attack-only implementation, verified locally; a commit was intentionally
+not made — see git status/diff in the Phase 5 completion report). Next task
+is Phase 6 (Mossling enemy), not started.
 
 Next owner:
 

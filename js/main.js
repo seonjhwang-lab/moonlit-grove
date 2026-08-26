@@ -17,7 +17,7 @@
       if (MG.Player && MG.Player.init) MG.Player.init();
       MG.UI.init();                     // 오버레이 / 방향 경고 (Game 이후에 초기화)
 
-      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 4');
+      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 5');
     } catch (err) {
       console.error('[MG] 초기화 실패:', err);
     }

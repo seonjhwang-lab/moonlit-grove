@@ -106,7 +106,7 @@
     ground: null,        // 미리 구워둔 지면 캔버스
 
     /* 플레이어 시작 위치 (player.js 가 참조) */
-    spawn: { x: 200, y: 706 },
+    spawn: { x: 200, y: 590 },
 
     init: function () {
       this.buildProps();
