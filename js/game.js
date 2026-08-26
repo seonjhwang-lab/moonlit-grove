@@ -1,25 +1,31 @@
 /* ==========================================================================
    game.js — 게임 루프 / 전체 게임 상태 / 캔버스 반응형 스케일
-   PHASE 1 범위:
-     - 내부 해상도 480x270 (16:9) 캔버스 설정
-     - 화면비를 유지하는 반응형 레터박스 스케일
+   v0.1.1 PORTRAIT CONVERSION:
+     - 내부 해상도를 세로형 360x640 (9:16) 로 전환 (기존 480x270 16:9 폐기)
+     - resize() 의 비율-맞춤 로직 자체는 해상도에 무관하게 동작하므로
+       INTERNAL_W/H 상수만 바꾸면 카메라·렌더 파이프라인이 함께 따라온다
      - 상태 머신(BOOT / TITLE / PLAY)의 뼈대
      - 델타타임 기반 메인 루프
-     - PHASE 4 이전 임시 배경 렌더
    ========================================================================== */
 (function (global) {
   'use strict';
 
   var MG = global.MG = global.MG || {};
 
-  var INTERNAL_W = 480;   // 내부 해상도 (16:9)
-  var INTERNAL_H = 270;
+  // v0.1.1: 모바일 세로 플레이가 기본 화면이다 (9:16).
+  // 데스크톱에서는 이 세로 무대가 화면 중앙에 최대 크기로 축소 표시된다 (style.css 참고).
+  var INTERNAL_W = 360;
+  var INTERNAL_H = 640;
   var MAX_DT = 0.05;      // 탭 전환 후 큰 점프 방지 (초)
 
+  // 개발용 디버그 오버레이. true 로 바꾸면 화면 크기/카메라/입력 상태를 표시한다.
+  var DEBUG_MOBILE_LAYOUT = false;
+
   var Game = {
-    VERSION: '0.1.0',
+    VERSION: '0.1.1',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
+    DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
 
     canvas: null,
     ctx: null,
@@ -88,8 +94,10 @@
     },
 
     /* -------------------------------------------------------------- resize
-       16:9 비율을 유지하면서 뷰포트 안에 최대 크기로 맞춘다.
-       남는 영역은 레터박스(배경색)로 남는다. */
+       내부 해상도 비율(9:16)을 유지하면서 뷰포트 안에 최대 크기로 맞춘다.
+       세로로 긴 화면(휴대폰)에서는 거의 꽉 차고, 가로로 넓은 화면(데스크톱)에서는
+       세로 무대가 가운데 놓이고 좌우에 여백(배경색)이 남는다. 비율 계산 자체는
+       INTERNAL_W/H 값에 무관하므로 해상도를 바꿔도 이 로직은 그대로 쓸 수 있다. */
     resize: function () {
       if (!this.stage) return;
 
@@ -183,6 +191,26 @@
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       this.updateCamera();
+      if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
+    },
+
+    /* v0.1.1: DEBUG_MOBILE_LAYOUT 이 true 일 때만 동작하는 개발용 정보 패널.
+       화면 크기 / 캔버스 논리 해상도 / 방향 / 카메라 크기 / 입력값을 보여준다. */
+    updateDebugPanel: function () {
+      var el = document.getElementById('debug-panel');
+      if (!el) return;
+      el.hidden = false;
+      var v = this.viewportSize();
+      var axis = (MG.Input && MG.Input.axis) || { x: 0, y: 0 };
+      var joyActive = !!(MG.Input && MG.Input._joyPointerId !== null && MG.Input._joyPointerId !== undefined);
+      el.textContent =
+        'viewport: ' + Math.round(v.w) + ' x ' + Math.round(v.h) + '\n' +
+        'canvas(logical): ' + INTERNAL_W + ' x ' + INTERNAL_H + '\n' +
+        'orientation: ' + (v.w >= v.h ? 'landscape' : 'portrait') + '\n' +
+        'camera: ' + this.camera.w + ' x ' + this.camera.h +
+          ' @ (' + this.camera.x + ', ' + this.camera.y + ')\n' +
+        'input: x=' + axis.x.toFixed(2) + ' y=' + axis.y.toFixed(2) + '\n' +
+        'joystick active: ' + joyActive;
     },
 
     /* -------------------------------------------------------------- render */

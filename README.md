@@ -3,10 +3,10 @@
 원작 16비트 감성의 탑다운 액션 어드벤처 프로토타입.
 
 - 내부 프로젝트명: **Moonlit Grove**
-- 버전: **v0.1.0** (Prototype 0.1)
+- 버전: **v0.1.1** (Portrait Conversion)
 - 기술: HTML / CSS / Vanilla JavaScript / HTML5 Canvas (프레임워크 없음)
 
-기준 문서: [game_design.md](game_design.md) — 모든 구현은 이 문서의 범위를 따릅니다.
+기준 문서: [GAME_DESIGN.md](GAME_DESIGN.md) · 개발 인계 문서: [AI_HANDOFF.md](AI_HANDOFF.md)
 
 ---
 
@@ -37,8 +37,9 @@ python -m http.server 8123
 | E | 상호작용 |
 | Q | 모스키 능력 (영입 후) |
 
-**모바일** — 가로 모드 전용. 좌하단 가상 조이스틱, 우하단 ⚔ 공격 버튼,
-모스키 영입 후 🌿 능력 버튼. 세로로 들면 "가로로 돌려서 플레이하세요" 경고가 표시됩니다.
+**모바일** — **세로 모드가 기본**입니다(v0.1.1). 좌하단 가상 조이스틱, 우하단 ⚔ 공격 버튼,
+모스키 영입 후 🌿 능력 버튼. 가로로 돌려도 계속 플레이할 수 있으며(자동으로 레이아웃만
+재계산), 더 이상 회전을 강제하거나 화면을 막지 않습니다.
 
 ---
 
@@ -60,6 +61,8 @@ python -m http.server 8123
 | 12 | 완료 화면 / 피드백 / JSON 내보내기 | ⬜ |
 | 13 | 폴리시 / 모바일 테스트 / 버그 수정 | ⬜ |
 
+**v0.1.1 — Portrait Conversion** (Phase 1-4 위에 적용, 별도 Phase 번호 없음): ✅ 완료
+
 ---
 
 ## 파일 구조
@@ -67,9 +70,10 @@ python -m http.server 8123
 ```
 moonlit-grove/
   index.html        캔버스 + DOM UI 레이어
-  style.css         레이아웃 / 16:9 레터박스 스케일 / 오버레이
+  style.css         레이아웃 / 9:16 세로 스케일 / 오버레이
   README.md
-  game_design.md    기준 문서
+  GAME_DESIGN.md    기준 문서
+  AI_HANDOFF.md     AI 협업 인계 문서 (버전/진행 상황 기록)
   js/
     main.js         진입점
     game.js         게임 루프 / 상태 / 반응형 스케일
@@ -80,7 +84,7 @@ moonlit-grove/
     combat.js       공격 판정 (PHASE 5)
     map.js          숲 맵 (PHASE 4)
     collision.js    충돌 (PHASE 4)
-    ui.js           HUD / 오버레이 / 방향 경고
+    ui.js           HUD / 오버레이 / 레이아웃-방향 처리
     feedback.js     피드백 (PHASE 12)
     audio.js        사운드 (PHASE 13)
   assets/
@@ -100,7 +104,10 @@ moonlit-grove/
 
 ## 렌더링 방식
 
-- 내부 해상도 **480 × 270 (16:9)** 캔버스에 그린 뒤 화면 크기에 맞춰 확대합니다
-  (`image-rendering: pixelated` 로 픽셀 보존).
+- 내부 해상도 **360 × 640 (9:16, v0.1.1)** 캔버스에 그린 뒤 화면 크기에 맞춰 확대합니다
+  (`image-rendering: pixelated` 로 픽셀 보존). 데스크톱에서는 이 세로 무대가 화면
+  중앙에 최대 크기로 표시되고 좌우에 여백이 남습니다 — 억지로 가로로 늘리지 않습니다.
 - 한글 텍스트는 캔버스가 아니라 캔버스 위에 겹쳐진 **DOM UI 레이어**에서 렌더링해
   작은 해상도에서도 가독성을 유지합니다.
+- 디버그: `js/game.js` 의 `DEBUG_MOBILE_LAYOUT` 상수를 `true` 로 바꾸면 화면 좌상단에
+  뷰포트/캔버스/카메라/입력 상태를 보여주는 패널이 나타납니다 (기본값 `false`).

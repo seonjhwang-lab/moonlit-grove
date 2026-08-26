@@ -1,7 +1,9 @@
 /* ==========================================================================
    달빛 숲의 수호자 — Moonlit Grove
    style.css : 레이아웃 / 반응형 스케일 / 오버레이 UI
-   PHASE 1 범위: 캔버스 레터박스 스케일, 세로 방향 경고, 타이틀 오버레이
+   v0.1.1 PORTRAIT CONVERSION: 세로(9:16)가 기본 플레이 화면이다.
+   데스크톱에서는 이 세로 무대를 화면 중앙에 최대 크기로 축소해 보여준다
+   (가로로 늘리거나 억지로 풀스크린 16:9 로 왜곡하지 않는다).
    ========================================================================== */
 
 :root {
@@ -24,6 +26,7 @@ html, body {
   padding: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;   /* 모바일 주소창 높이 변화에 맞춰 실제 보이는 영역만 채운다 */
   overflow: hidden;
   background: var(--mg-bg);
   color: var(--mg-ink);
@@ -38,7 +41,9 @@ html, body {
 }
 
 /* --------------------------------------------------------------------------
-   무대(stage) : 16:9 비율을 유지하며 화면 중앙에 letterbox 배치
+   무대(stage) : 9:16 세로 비율을 유지하며 화면 중앙에 최대 크기로 배치.
+   모바일 세로 화면에서는 거의 꽉 차고, 데스크톱/가로 화면에서는 세로 무대가
+   가운데 놓이고 좌우에 여백이 남는다 (풀스크린으로 왜곡해 늘리지 않는다).
    실제 픽셀 크기는 game.js 의 resize() 가 계산해 인라인 스타일로 지정한다.
    -------------------------------------------------------------------------- */
 
@@ -54,7 +59,7 @@ html, body {
 #stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;   /* JS 계산 전 초기 표시용 폴백 */
+  aspect-ratio: 9 / 16;   /* JS 계산 전 초기 표시용 폴백 */
   max-width: 100%;
   max-height: 100%;
   overflow: hidden;
@@ -200,13 +205,16 @@ body:not(.mg-touch) .attack-button {
   display: none;
 }
 
-/* 좌하단: 조이스틱을 인식하는 넓은 터치 영역 (그 자체는 보이지 않는다) */
+/* 좌하단: 조이스틱을 인식하는 넓은 터치 영역 (그 자체는 보이지 않는다).
+   v0.1.1: 세로 화면은 세로 길이가 훨씬 길어서, 원래 랜드스케이프용이던 62%
+   높이를 그대로 쓰면 엄지가 자연스럽게 닿는 범위를 넘어 화면 중간까지
+   조이스틱 발동 영역이 된다. 엄지 도달 범위에 맞춰 하단 45%로 낮춘다. */
 #joystick-zone {
   position: fixed;
   left: 0;
   bottom: 0;
-  width: 56%;
-  height: 62%;
+  width: 55%;
+  height: 45%;
   pointer-events: auto;
   touch-action: none;
 }
@@ -268,30 +276,26 @@ body:not(.mg-touch) .attack-button {
 }
 
 /* --------------------------------------------------------------------------
-   세로 방향 경고
+   디버그 패널 (v0.1.1) — game.js 의 DEBUG_MOBILE_LAYOUT 이 true 일 때만 채워지고
+   보인다. 평소에는 [hidden] 으로 완전히 빠진다.
    -------------------------------------------------------------------------- */
 
-.rotate-icon {
-  font-size: clamp(44px, 14vmin, 96px);
-  animation: mg-rotate-hint 2.1s ease-in-out infinite;
+.debug-panel {
+  position: fixed;
+  left: calc(6px + env(safe-area-inset-left));
+  top: calc(6px + env(safe-area-inset-top));
+  margin: 0;
+  padding: 6px 8px;
+  max-width: 60vw;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre;
+  color: #baffc9;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(186, 255, 201, 0.35);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 999;
 }
-
-.rotate-text {
-  margin-top: 1.2em;
-  font-size: clamp(15px, 4.4vmin, 26px);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--mg-ink);
-}
-
-@keyframes mg-rotate-hint {
-  0%, 45%   { transform: rotate(0deg); }
-  60%, 100% { transform: rotate(-90deg); }
-}
-
-/* 세로 경고가 떠 있는 동안 게임 화면은 감춘다 */
-body.mg-portrait #game-root { visibility: hidden; }
-
-@media (prefers-reduced-motion: reduce) {
-  .rotate-icon { animation: none; transform: rotate(-90deg); }
-}
+.debug-panel[hidden] { display: none; }

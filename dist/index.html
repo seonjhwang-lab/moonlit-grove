@@ -15,7 +15,9 @@
 /* ==========================================================================
    달빛 숲의 수호자 — Moonlit Grove
    style.css : 레이아웃 / 반응형 스케일 / 오버레이 UI
-   PHASE 1 범위: 캔버스 레터박스 스케일, 세로 방향 경고, 타이틀 오버레이
+   v0.1.1 PORTRAIT CONVERSION: 세로(9:16)가 기본 플레이 화면이다.
+   데스크톱에서는 이 세로 무대를 화면 중앙에 최대 크기로 축소해 보여준다
+   (가로로 늘리거나 억지로 풀스크린 16:9 로 왜곡하지 않는다).
    ========================================================================== */
 
 :root {
@@ -38,6 +40,7 @@ html, body {
   padding: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;   /* 모바일 주소창 높이 변화에 맞춰 실제 보이는 영역만 채운다 */
   overflow: hidden;
   background: var(--mg-bg);
   color: var(--mg-ink);
@@ -52,7 +55,9 @@ html, body {
 }
 
 /* --------------------------------------------------------------------------
-   무대(stage) : 16:9 비율을 유지하며 화면 중앙에 letterbox 배치
+   무대(stage) : 9:16 세로 비율을 유지하며 화면 중앙에 최대 크기로 배치.
+   모바일 세로 화면에서는 거의 꽉 차고, 데스크톱/가로 화면에서는 세로 무대가
+   가운데 놓이고 좌우에 여백이 남는다 (풀스크린으로 왜곡해 늘리지 않는다).
    실제 픽셀 크기는 game.js 의 resize() 가 계산해 인라인 스타일로 지정한다.
    -------------------------------------------------------------------------- */
 
@@ -68,7 +73,7 @@ html, body {
 #stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;   /* JS 계산 전 초기 표시용 폴백 */
+  aspect-ratio: 9 / 16;   /* JS 계산 전 초기 표시용 폴백 */
   max-width: 100%;
   max-height: 100%;
   overflow: hidden;
@@ -214,13 +219,16 @@ body:not(.mg-touch) .attack-button {
   display: none;
 }
 
-/* 좌하단: 조이스틱을 인식하는 넓은 터치 영역 (그 자체는 보이지 않는다) */
+/* 좌하단: 조이스틱을 인식하는 넓은 터치 영역 (그 자체는 보이지 않는다).
+   v0.1.1: 세로 화면은 세로 길이가 훨씬 길어서, 원래 랜드스케이프용이던 62%
+   높이를 그대로 쓰면 엄지가 자연스럽게 닿는 범위를 넘어 화면 중간까지
+   조이스틱 발동 영역이 된다. 엄지 도달 범위에 맞춰 하단 45%로 낮춘다. */
 #joystick-zone {
   position: fixed;
   left: 0;
   bottom: 0;
-  width: 56%;
-  height: 62%;
+  width: 55%;
+  height: 45%;
   pointer-events: auto;
   touch-action: none;
 }
@@ -282,33 +290,29 @@ body:not(.mg-touch) .attack-button {
 }
 
 /* --------------------------------------------------------------------------
-   세로 방향 경고
+   디버그 패널 (v0.1.1) — game.js 의 DEBUG_MOBILE_LAYOUT 이 true 일 때만 채워지고
+   보인다. 평소에는 [hidden] 으로 완전히 빠진다.
    -------------------------------------------------------------------------- */
 
-.rotate-icon {
-  font-size: clamp(44px, 14vmin, 96px);
-  animation: mg-rotate-hint 2.1s ease-in-out infinite;
+.debug-panel {
+  position: fixed;
+  left: calc(6px + env(safe-area-inset-left));
+  top: calc(6px + env(safe-area-inset-top));
+  margin: 0;
+  padding: 6px 8px;
+  max-width: 60vw;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre;
+  color: #baffc9;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(186, 255, 201, 0.35);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 999;
 }
-
-.rotate-text {
-  margin-top: 1.2em;
-  font-size: clamp(15px, 4.4vmin, 26px);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--mg-ink);
-}
-
-@keyframes mg-rotate-hint {
-  0%, 45%   { transform: rotate(0deg); }
-  60%, 100% { transform: rotate(-90deg); }
-}
-
-/* 세로 경고가 떠 있는 동안 게임 화면은 감춘다 */
-body.mg-portrait #game-root { visibility: hidden; }
-
-@media (prefers-reduced-motion: reduce) {
-  .rotate-icon { animation: none; transform: rotate(-90deg); }
-}
+.debug-panel[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -316,9 +320,9 @@ body.mg-portrait #game-root { visibility: hidden; }
   <!-- 게임 전체 루트: 캔버스 + 오버레이 UI가 같은 좌표계 위에 겹쳐진다 -->
   <div id="game-root">
 
-    <!-- 내부 해상도 480x270 (16:9) 캔버스. CSS 크기는 JS가 화면비를 유지하며 계산 -->
+    <!-- 내부 해상도 360x640 (9:16, 세로 우선). CSS 크기는 JS가 화면비를 유지하며 계산 -->
     <div id="stage">
-      <canvas id="game-canvas" width="480" height="270"></canvas>
+      <canvas id="game-canvas" width="360" height="640"></canvas>
 
       <!-- 캔버스 위에 겹치는 DOM UI 레이어 (한글 텍스트 가독성을 위해 DOM 사용) -->
       <div id="ui-layer">
@@ -326,8 +330,11 @@ body.mg-portrait #game-root { visibility: hidden; }
         <!-- HUD: 좌상단 하트(PHASE 7), 우상단 버전 -->
         <div id="hud">
           <div id="hud-hearts" class="hud-slot hud-left"></div>
-          <div id="hud-version" class="hud-slot hud-right">v0.1.0</div>
+          <div id="hud-version" class="hud-slot hud-right">v0.1.1</div>
         </div>
+
+        <!-- v0.1.1: DEBUG_MOBILE_LAYOUT 이 true 일 때만 game.js 가 내용을 채우고 보여준다 -->
+        <pre id="debug-panel" class="debug-panel" hidden></pre>
 
         <!-- 터치 컨트롤 레이어 (모바일 전용, input.js 가 제어) -->
         <div id="touch-layer">
@@ -344,19 +351,11 @@ body.mg-portrait #game-root { visibility: hidden; }
             <h1 class="game-title">달빛 숲</h1>
             <p class="game-subtitle">달빛 숲의 수호자</p>
             <button id="btn-start" class="ui-button" type="button">모험 시작</button>
-            <p class="game-version">Prototype 0.1.0</p>
+            <p class="game-version">Prototype 0.1.1</p>
           </div>
         </div>
 
       </div>
-    </div>
-  </div>
-
-  <!-- 세로 방향 경고 (게임 루트 바깥: 화면 전체를 덮는다) -->
-  <div id="overlay-orientation" class="overlay overlay-fullscreen" hidden>
-    <div class="overlay-inner">
-      <div class="rotate-icon">📱</div>
-      <p class="rotate-text">가로로 돌려서 플레이하세요</p>
     </div>
   </div>
 
@@ -482,7 +481,7 @@ body.mg-portrait #game-root { visibility: hidden; }
 /* ==========================================================================
    map.js — 달빛 숲 — 초입 : 레이아웃 데이터와 렌더링
    PHASE 4 범위:
-     - 화면(480x270)보다 큰 맵(1440x810) + 지형 데이터
+     - 화면(v0.1.1 기준 360x640)보다 큰 맵(1440x810) + 지형 데이터
      - 나무 / 바위 / 물 / 풀 / 꽃 / 흙길
      - 충돌 사각형 목록 제공 (collision.js 가 소비)
      - 지면은 오프스크린 캔버스에 한 번만 굽고(bake) 매 프레임 blit 한다
@@ -1493,10 +1492,11 @@ body.mg-portrait #game-root { visibility: hidden; }
 /* ---- js/ui.js ---- */
 /* ==========================================================================
    ui.js — HUD / 오버레이 / 상호작용 프롬프트
-   PHASE 1 범위:
-     - 타이틀 오버레이 표시 및 "모험 시작" 버튼
-     - 세로(portrait) 방향 경고 오버레이
-     - 화면 크기 변화 훅
+   v0.1.1 PORTRAIT CONVERSION:
+     - 세로 모드를 막던 전체화면 경고/일시정지 로직을 완전히 제거했다.
+       세로가 이제 기본 플레이 방향이므로 더 이상 "차단해야 할 상태"가 아니다.
+     - updateOrientationAndLayout() 이 방향 판별 + 레이아웃 재계산을
+       한 곳에서 담당한다. 게임을 멈추거나 화면을 가리는 부수효과는 없다.
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -1510,7 +1510,6 @@ body.mg-portrait #game-root { visibility: hidden; }
     init: function () {
       this.el.title = document.getElementById('overlay-title');
       this.el.startBtn = document.getElementById('btn-start');
-      this.el.orientation = document.getElementById('overlay-orientation');
       this.el.version = document.getElementById('hud-version');
 
       if (this.el.version && MG.Game) {
@@ -1528,33 +1527,37 @@ body.mg-portrait #game-root { visibility: hidden; }
         });
       }
 
-      // 방향 감지: matchMedia + resize 양쪽을 모두 사용해 기기별 차이를 흡수
-      this._checkOrientation = function () { self.updateOrientation(); };
-      global.addEventListener('resize', this._checkOrientation);
+      // 방향/레이아웃 변화 감지: matchMedia + resize 양쪽을 모두 사용해 기기별 차이를 흡수
+      this._onOrientationEvent = function () { self.updateOrientationAndLayout(); };
+      global.addEventListener('resize', this._onOrientationEvent);
       global.addEventListener('orientationchange', function () {
         // iOS는 orientationchange 직후 크기 갱신이 늦는 경우가 있어 한 프레임 늦춘다
-        global.setTimeout(self._checkOrientation, 120);
-        global.setTimeout(self._checkOrientation, 400);
+        global.setTimeout(self._onOrientationEvent, 120);
+        global.setTimeout(self._onOrientationEvent, 400);
       });
+      if (global.visualViewport) {
+        global.visualViewport.addEventListener('resize', this._onOrientationEvent);
+      }
       if (global.matchMedia) {
         var mq = global.matchMedia('(orientation: portrait)');
-        if (mq.addEventListener) mq.addEventListener('change', this._checkOrientation);
-        else if (mq.addListener) mq.addListener(this._checkOrientation);
+        if (mq.addEventListener) mq.addEventListener('change', this._onOrientationEvent);
+        else if (mq.addListener) mq.addListener(this._onOrientationEvent);
       }
 
-      this.updateOrientation();
+      this.updateOrientationAndLayout();
     },
 
-    /* 세로로 들면 경고를 띄우고 게임을 일시정지한다 */
-    updateOrientation: function () {
-      var portrait = global.innerHeight > global.innerWidth;
+    /* 방향 판별 + 레이아웃 재계산을 한 곳에서 처리한다.
+       세로/가로 어느 쪽이든 게임은 항상 플레이 가능해야 하므로,
+       여기서 MG.Game.paused 를 건드리거나 #game-root 를 숨기지 않는다.
+       resize/orientationchange/visualViewport 어디서 불러도 안전하다. */
+    updateOrientationAndLayout: function () {
+      var portrait = global.innerHeight >= global.innerWidth;
       this.isPortrait = portrait;
-
-      if (this.el.orientation) this.el.orientation.hidden = !portrait;
       document.body.classList.toggle('mg-portrait', portrait);
+      document.body.classList.toggle('mg-landscape', !portrait);
 
-      // 세로일 때는 게임을 멈춘다 (경고 오버레이가 화면을 덮는다)
-      if (MG.Game) MG.Game.paused = portrait;
+      if (MG.Game && MG.Game.resize) MG.Game.resize();
     },
 
     showTitle: function () {
@@ -1566,11 +1569,14 @@ body.mg-portrait #game-root { visibility: hidden; }
     },
 
     /* game.js 의 resize() 에서 호출 — 화면 픽셀 크기 전달.
-       ResizeObserver 경유이므로 resize 이벤트가 오지 않는 환경에서도 방향이 동기화된다.
-       (주의: 여기서 Game.resize() 를 다시 호출하면 무한 루프가 된다) */
+       ResizeObserver 경유이므로 resize 이벤트가 오지 않는 환경에서도 방향 클래스가
+       동기화된다. (주의: 여기서 다시 Game.resize() 를 호출하면 무한 루프가 되므로
+       방향 클래스 갱신만 하고 레이아웃 재계산은 하지 않는다) */
     onResize: function (/* w, h */) {
-      this.updateOrientation();
-      // PHASE 3 이후: 조이스틱 / 버튼 배치 재계산이 여기에 들어간다.
+      var portrait = global.innerHeight >= global.innerWidth;
+      this.isPortrait = portrait;
+      document.body.classList.toggle('mg-portrait', portrait);
+      document.body.classList.toggle('mg-landscape', !portrait);
     }
   };
 
@@ -1580,26 +1586,32 @@ body.mg-portrait #game-root { visibility: hidden; }
 /* ---- js/game.js ---- */
 /* ==========================================================================
    game.js — 게임 루프 / 전체 게임 상태 / 캔버스 반응형 스케일
-   PHASE 1 범위:
-     - 내부 해상도 480x270 (16:9) 캔버스 설정
-     - 화면비를 유지하는 반응형 레터박스 스케일
+   v0.1.1 PORTRAIT CONVERSION:
+     - 내부 해상도를 세로형 360x640 (9:16) 로 전환 (기존 480x270 16:9 폐기)
+     - resize() 의 비율-맞춤 로직 자체는 해상도에 무관하게 동작하므로
+       INTERNAL_W/H 상수만 바꾸면 카메라·렌더 파이프라인이 함께 따라온다
      - 상태 머신(BOOT / TITLE / PLAY)의 뼈대
      - 델타타임 기반 메인 루프
-     - PHASE 4 이전 임시 배경 렌더
    ========================================================================== */
 (function (global) {
   'use strict';
 
   var MG = global.MG = global.MG || {};
 
-  var INTERNAL_W = 480;   // 내부 해상도 (16:9)
-  var INTERNAL_H = 270;
+  // v0.1.1: 모바일 세로 플레이가 기본 화면이다 (9:16).
+  // 데스크톱에서는 이 세로 무대가 화면 중앙에 최대 크기로 축소 표시된다 (style.css 참고).
+  var INTERNAL_W = 360;
+  var INTERNAL_H = 640;
   var MAX_DT = 0.05;      // 탭 전환 후 큰 점프 방지 (초)
 
+  // 개발용 디버그 오버레이. true 로 바꾸면 화면 크기/카메라/입력 상태를 표시한다.
+  var DEBUG_MOBILE_LAYOUT = false;
+
   var Game = {
-    VERSION: '0.1.0',
+    VERSION: '0.1.1',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
+    DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
 
     canvas: null,
     ctx: null,
@@ -1668,8 +1680,10 @@ body.mg-portrait #game-root { visibility: hidden; }
     },
 
     /* -------------------------------------------------------------- resize
-       16:9 비율을 유지하면서 뷰포트 안에 최대 크기로 맞춘다.
-       남는 영역은 레터박스(배경색)로 남는다. */
+       내부 해상도 비율(9:16)을 유지하면서 뷰포트 안에 최대 크기로 맞춘다.
+       세로로 긴 화면(휴대폰)에서는 거의 꽉 차고, 가로로 넓은 화면(데스크톱)에서는
+       세로 무대가 가운데 놓이고 좌우에 여백(배경색)이 남는다. 비율 계산 자체는
+       INTERNAL_W/H 값에 무관하므로 해상도를 바꿔도 이 로직은 그대로 쓸 수 있다. */
     resize: function () {
       if (!this.stage) return;
 
@@ -1763,6 +1777,26 @@ body.mg-portrait #game-root { visibility: hidden; }
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       this.updateCamera();
+      if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
+    },
+
+    /* v0.1.1: DEBUG_MOBILE_LAYOUT 이 true 일 때만 동작하는 개발용 정보 패널.
+       화면 크기 / 캔버스 논리 해상도 / 방향 / 카메라 크기 / 입력값을 보여준다. */
+    updateDebugPanel: function () {
+      var el = document.getElementById('debug-panel');
+      if (!el) return;
+      el.hidden = false;
+      var v = this.viewportSize();
+      var axis = (MG.Input && MG.Input.axis) || { x: 0, y: 0 };
+      var joyActive = !!(MG.Input && MG.Input._joyPointerId !== null && MG.Input._joyPointerId !== undefined);
+      el.textContent =
+        'viewport: ' + Math.round(v.w) + ' x ' + Math.round(v.h) + '\n' +
+        'canvas(logical): ' + INTERNAL_W + ' x ' + INTERNAL_H + '\n' +
+        'orientation: ' + (v.w >= v.h ? 'landscape' : 'portrait') + '\n' +
+        'camera: ' + this.camera.w + ' x ' + this.camera.h +
+          ' @ (' + this.camera.x + ', ' + this.camera.y + ')\n' +
+        'input: x=' + axis.x.toFixed(2) + ' y=' + axis.y.toFixed(2) + '\n' +
+        'joystick active: ' + joyActive;
     },
 
     /* -------------------------------------------------------------- render */

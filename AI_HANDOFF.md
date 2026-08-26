@@ -12,7 +12,7 @@ v0.1.1
 
 Current Phase:
 
-Portrait Conversion
+Portrait Conversion — **COMPLETE** (implemented and verified by Claude Code)
 
 ---
 
@@ -141,17 +141,13 @@ Do not bypass this architecture without a strong reason.
 
 ---
 
-# CURRENT ISSUE
+# RESOLVED ISSUE (was landscape-first)
 
 The original implementation was landscape-first.
 
 Original logical canvas:
 
-480 × 270
-
-Original aspect ratio:
-
-16:9
+480 × 270 (16:9)
 
 Portrait mode previously:
 
@@ -159,15 +155,13 @@ Portrait mode previously:
 * hid the game root
 * paused the game
 
-This behavior is being removed.
+This behavior has been **removed** (see COMPLETED: PORTRAIT CONVERSION below).
 
 ---
 
-# CURRENT TASK
+# COMPLETED: PORTRAIT CONVERSION v0.1.1
 
-## Portrait Conversion v0.1.1
-
-Goal:
+Goal (achieved):
 
 Make the game fully playable on smartphones in portrait mode.
 
@@ -175,11 +169,37 @@ Primary target:
 
 9:16
 
-Suggested logical canvas:
+Logical canvas used:
 
 360 × 640
 
-The exact logical size may be adjusted if needed.
+Files changed: `js/game.js`, `js/ui.js`, `js/style.css` (touch-control sizing +
+debug panel + dead orientation-warning CSS removed), `index.html` (canvas
+attrs, removed `#overlay-orientation`, added `#debug-panel`), `README.md`.
+`js/player.js`, `js/map.js`, `js/collision.js`, `js/input.js` needed **no**
+changes — they already worked in terms of `MG.Game.WIDTH/HEIGHT` / generic
+camera rects rather than hardcoded 480×270, so the resolution swap alone
+carried through the whole pipeline.
+
+Verified (via synthetic Pointer Events + forced viewport sizes, since this
+session's browser preview has no screenshot compositing): portrait load with
+no rotation warning, camera clamps against the existing 1440×810 map without
+exposing outside-world areas, tree/water collision unchanged, joystick +
+attack button work simultaneously on independent pointer IDs, orientation
+flip portrait→landscape→portrait recalculates layout without reload or
+losing player/map state, desktop keyboard still works with the portrait
+stage centered (not stretched to 16:9).
+
+Known limitation: the existing start-area spawn (200, 706) sits close to the
+map's south edge (map height 810 vs camera height 640 ⇒ only 170px of
+vertical clamp headroom). The camera correctly clamps there, so the player
+renders low on screen at spawn (~84% down) instead of centered. This is
+inherent to pairing the existing Phase 4 map with a much taller portrait
+camera, not a bug — per the conversion brief the map/spawn were not to be
+altered. It reads fine visually (screenshot checked) and no HUD/attack-button
+overlap occurs; only the *invisible* joystick hit-zone's rectangle
+technically overlaps that screen region. Revisit if a future phase reshapes
+the start area.
 
 ---
 
@@ -298,7 +318,10 @@ Phase 1–4 prototype.
 
 ## v0.1.1
 
-Portrait mobile conversion.
+Portrait mobile conversion. Landscape 480×270 (16:9) → portrait 360×640 (9:16).
+Orientation-blocking overlay/pause removed. Phase 1–4 systems (map, player,
+collision, camera, joystick, keyboard) preserved unchanged in logic; only
+resolution/camera constants and UI positioning changed. Completed by Claude Code.
 
 ---
 
@@ -310,7 +333,8 @@ AI-assisted development workflow
 
 Current task:
 
-Portrait Conversion v0.1.1
+Portrait Conversion v0.1.1 — done, stable. Next task is Phase 5 (real-time
+sword combat + first Mossling), not started.
 
 Next owner:
 

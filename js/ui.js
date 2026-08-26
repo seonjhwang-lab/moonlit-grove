@@ -1,9 +1,10 @@
 /* ==========================================================================
    ui.js — HUD / 오버레이 / 상호작용 프롬프트
-   PHASE 1 범위:
-     - 타이틀 오버레이 표시 및 "모험 시작" 버튼
-     - 세로(portrait) 방향 경고 오버레이
-     - 화면 크기 변화 훅
+   v0.1.1 PORTRAIT CONVERSION:
+     - 세로 모드를 막던 전체화면 경고/일시정지 로직을 완전히 제거했다.
+       세로가 이제 기본 플레이 방향이므로 더 이상 "차단해야 할 상태"가 아니다.
+     - updateOrientationAndLayout() 이 방향 판별 + 레이아웃 재계산을
+       한 곳에서 담당한다. 게임을 멈추거나 화면을 가리는 부수효과는 없다.
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -17,7 +18,6 @@
     init: function () {
       this.el.title = document.getElementById('overlay-title');
       this.el.startBtn = document.getElementById('btn-start');
-      this.el.orientation = document.getElementById('overlay-orientation');
       this.el.version = document.getElementById('hud-version');
 
       if (this.el.version && MG.Game) {
@@ -35,33 +35,37 @@
         });
       }
 
-      // 방향 감지: matchMedia + resize 양쪽을 모두 사용해 기기별 차이를 흡수
-      this._checkOrientation = function () { self.updateOrientation(); };
-      global.addEventListener('resize', this._checkOrientation);
+      // 방향/레이아웃 변화 감지: matchMedia + resize 양쪽을 모두 사용해 기기별 차이를 흡수
+      this._onOrientationEvent = function () { self.updateOrientationAndLayout(); };
+      global.addEventListener('resize', this._onOrientationEvent);
       global.addEventListener('orientationchange', function () {
         // iOS는 orientationchange 직후 크기 갱신이 늦는 경우가 있어 한 프레임 늦춘다
-        global.setTimeout(self._checkOrientation, 120);
-        global.setTimeout(self._checkOrientation, 400);
+        global.setTimeout(self._onOrientationEvent, 120);
+        global.setTimeout(self._onOrientationEvent, 400);
       });
+      if (global.visualViewport) {
+        global.visualViewport.addEventListener('resize', this._onOrientationEvent);
+      }
       if (global.matchMedia) {
         var mq = global.matchMedia('(orientation: portrait)');
-        if (mq.addEventListener) mq.addEventListener('change', this._checkOrientation);
-        else if (mq.addListener) mq.addListener(this._checkOrientation);
+        if (mq.addEventListener) mq.addEventListener('change', this._onOrientationEvent);
+        else if (mq.addListener) mq.addListener(this._onOrientationEvent);
       }
 
-      this.updateOrientation();
+      this.updateOrientationAndLayout();
     },
 
-    /* 세로로 들면 경고를 띄우고 게임을 일시정지한다 */
-    updateOrientation: function () {
-      var portrait = global.innerHeight > global.innerWidth;
+    /* 방향 판별 + 레이아웃 재계산을 한 곳에서 처리한다.
+       세로/가로 어느 쪽이든 게임은 항상 플레이 가능해야 하므로,
+       여기서 MG.Game.paused 를 건드리거나 #game-root 를 숨기지 않는다.
+       resize/orientationchange/visualViewport 어디서 불러도 안전하다. */
+    updateOrientationAndLayout: function () {
+      var portrait = global.innerHeight >= global.innerWidth;
       this.isPortrait = portrait;
-
-      if (this.el.orientation) this.el.orientation.hidden = !portrait;
       document.body.classList.toggle('mg-portrait', portrait);
+      document.body.classList.toggle('mg-landscape', !portrait);
 
-      // 세로일 때는 게임을 멈춘다 (경고 오버레이가 화면을 덮는다)
-      if (MG.Game) MG.Game.paused = portrait;
+      if (MG.Game && MG.Game.resize) MG.Game.resize();
     },
 
     showTitle: function () {
@@ -73,11 +77,14 @@
     },
 
     /* game.js 의 resize() 에서 호출 — 화면 픽셀 크기 전달.
-       ResizeObserver 경유이므로 resize 이벤트가 오지 않는 환경에서도 방향이 동기화된다.
-       (주의: 여기서 Game.resize() 를 다시 호출하면 무한 루프가 된다) */
+       ResizeObserver 경유이므로 resize 이벤트가 오지 않는 환경에서도 방향 클래스가
+       동기화된다. (주의: 여기서 다시 Game.resize() 를 호출하면 무한 루프가 되므로
+       방향 클래스 갱신만 하고 레이아웃 재계산은 하지 않는다) */
     onResize: function (/* w, h */) {
-      this.updateOrientation();
-      // PHASE 3 이후: 조이스틱 / 버튼 배치 재계산이 여기에 들어간다.
+      var portrait = global.innerHeight >= global.innerWidth;
+      this.isPortrait = portrait;
+      document.body.classList.toggle('mg-portrait', portrait);
+      document.body.classList.toggle('mg-landscape', !portrait);
     }
   };
 
