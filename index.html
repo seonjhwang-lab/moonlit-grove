@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0b1410" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="description" content="달빛 숲의 수호자 — Moonlit Grove Prototype 0.1.0" />
+<title>달빛 숲의 수호자</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- 게임 전체 루트: 캔버스 + 오버레이 UI가 같은 좌표계 위에 겹쳐진다 -->
+  <div id="game-root">
+
+    <!-- 내부 해상도 480x270 (16:9) 캔버스. CSS 크기는 JS가 화면비를 유지하며 계산 -->
+    <div id="stage">
+      <canvas id="game-canvas" width="480" height="270"></canvas>
+
+      <!-- 캔버스 위에 겹치는 DOM UI 레이어 (한글 텍스트 가독성을 위해 DOM 사용) -->
+      <div id="ui-layer">
+
+        <!-- HUD: 좌상단 하트(PHASE 7), 우상단 버전 -->
+        <div id="hud">
+          <div id="hud-hearts" class="hud-slot hud-left"></div>
+          <div id="hud-version" class="hud-slot hud-right">v0.1.0</div>
+        </div>
+
+        <!-- 터치 컨트롤 레이어 (모바일 전용, input.js 가 제어) -->
+        <div id="touch-layer">
+          <div id="joystick-zone" class="touch-controls"></div>
+          <div id="joystick-base" class="touch-controls joystick-base" hidden>
+            <div id="joystick-knob" class="joystick-knob"></div>
+          </div>
+          <button id="btn-attack" class="touch-controls attack-button" type="button" aria-label="공격">⚔</button>
+        </div>
+
+        <!-- 타이틀 화면 -->
+        <div id="overlay-title" class="overlay">
+          <div class="overlay-inner">
+            <h1 class="game-title">달빛 숲</h1>
+            <p class="game-subtitle">달빛 숲의 수호자</p>
+            <button id="btn-start" class="ui-button" type="button">모험 시작</button>
+            <p class="game-version">Prototype 0.1.0</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 세로 방향 경고 (게임 루트 바깥: 화면 전체를 덮는다) -->
+  <div id="overlay-orientation" class="overlay overlay-fullscreen" hidden>
+    <div class="overlay-inner">
+      <div class="rotate-icon">📱</div>
+      <p class="rotate-text">가로로 돌려서 플레이하세요</p>
+    </div>
+  </div>
+
+  <!-- 시스템 순서대로 로드 (클래식 스크립트: file:// 로도 열린다) -->
+  <script src="js/audio.js"></script>
+  <script src="js/collision.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/combat.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/enemy.js"></script>
+  <script src="js/companion.js"></script>
+  <script src="js/feedback.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

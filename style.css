@@ -1,0 +1,297 @@
+/* ==========================================================================
+   달빛 숲의 수호자 — Moonlit Grove
+   style.css : 레이아웃 / 반응형 스케일 / 오버레이 UI
+   PHASE 1 범위: 캔버스 레터박스 스케일, 세로 방향 경고, 타이틀 오버레이
+   ========================================================================== */
+
+:root {
+  --mg-bg:        #05080a;   /* 레터박스 바깥 배경 */
+  --mg-ink:       #f2f7ea;
+  --mg-ink-dim:   #9fb39a;
+  --mg-leaf:      #4f9d5d;
+  --mg-leaf-deep: #2c6b3f;
+  --mg-moon:      #cfe4ff;
+  --mg-panel:     rgba(8, 18, 14, 0.88);
+  --mg-ui-font:   "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR",
+                  "Malgun Gothic", system-ui, sans-serif;
+  --mg-font-display: "Gowun Batang", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--mg-bg);
+  color: var(--mg-ink);
+  font-family: var(--mg-ui-font);
+  /* 모바일: 스크롤 바운스 / 더블탭 확대 / 텍스트 선택 방지 */
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   무대(stage) : 16:9 비율을 유지하며 화면 중앙에 letterbox 배치
+   실제 픽셀 크기는 game.js 의 resize() 가 계산해 인라인 스타일로 지정한다.
+   -------------------------------------------------------------------------- */
+
+#game-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mg-bg);
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;   /* JS 계산 전 초기 표시용 폴백 */
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  background: #0b1410;
+  box-shadow: 0 0 0 1px rgba(120, 180, 130, 0.18),
+              0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 픽셀아트 확대 시 보간 없이 또렷하게 */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* UI 레이어: 캔버스 위에 겹치며, 기본적으로 클릭을 통과시킨다 */
+#ui-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#ui-layer button,
+#ui-layer input,
+#ui-layer textarea,
+#ui-layer .interactive { pointer-events: auto; }
+
+/* --------------------------------------------------------------------------
+   HUD
+   -------------------------------------------------------------------------- */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  padding: calc(2.2% + env(safe-area-inset-top)) calc(2.6% + env(safe-area-inset-right))
+           calc(2.2% + env(safe-area-inset-bottom)) calc(2.6% + env(safe-area-inset-left));
+}
+
+.hud-slot {
+  position: absolute;
+  top: calc(2.2% + env(safe-area-inset-top));
+  font-size: clamp(11px, 2.4vh, 18px);
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+.hud-left  { left:  calc(2.6% + env(safe-area-inset-left)); }
+.hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
+
+/* --------------------------------------------------------------------------
+   오버레이 (타이틀 / 대화 / 결과 등 공통)
+   -------------------------------------------------------------------------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: radial-gradient(120% 90% at 50% 40%,
+              rgba(14, 32, 24, 0.72) 0%, rgba(3, 7, 6, 0.94) 100%);
+  pointer-events: auto;
+  z-index: 10;
+}
+.overlay[hidden] { display: none; }
+
+.overlay-fullscreen {
+  position: fixed;
+  z-index: 100;
+  background: #05080a;
+}
+
+.overlay-inner {
+  padding: 4vmin 6vmin;
+  max-width: 90%;
+}
+
+.game-title {
+  margin: 0;
+  font-family: var(--mg-font-display);
+  font-size: clamp(32px, 10vh, 80px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--mg-moon);
+  text-shadow: 0 0 18px rgba(150, 200, 255, 0.35),
+               0 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+.game-subtitle {
+  margin: 0.6em 0 0;
+  font-size: clamp(12px, 2.6vh, 20px);
+  color: var(--mg-leaf);
+  letter-spacing: 0.24em;
+}
+
+.game-version {
+  margin: 1.4em 0 0;
+  font-size: clamp(10px, 1.9vh, 14px);
+  color: var(--mg-ink-dim);
+  opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+   버튼 (엄지로 누르기 충분한 크기)
+   -------------------------------------------------------------------------- */
+
+.ui-button {
+  margin-top: 2.2em;
+  min-width: 46vmin;
+  max-width: 320px;
+  min-height: 48px;
+  padding: 0.8em 2em;
+  font-family: inherit;
+  font-size: clamp(14px, 2.9vh, 22px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--mg-ink);
+  background: linear-gradient(180deg, var(--mg-leaf) 0%, var(--mg-leaf-deep) 100%);
+  border: 2px solid rgba(220, 245, 220, 0.55);
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45);
+  transition: transform 90ms ease, box-shadow 90ms ease, filter 90ms ease;
+}
+.ui-button:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  filter: brightness(1.12);
+}
+
+/* --------------------------------------------------------------------------
+   터치 컨트롤 (모바일) — 터치 기기로 감지된 경우에만 표시된다 (input.js 가
+   body 에 mg-touch 클래스를 붙인다). 데스크톱에서는 완전히 숨긴다.
+   -------------------------------------------------------------------------- */
+
+/* 터치 미지원 기기에서는 명시적으로 숨긴다. 개별 컨트롤이 자기 display 값을
+   (flex 등) 갖고 있어도 이 규칙의 명시도(specificity)가 항상 더 높으므로
+   선언 순서와 무관하게 이긴다 — display 값 충돌을 피하기 위한 구조. */
+body:not(.mg-touch) #joystick-zone,
+body:not(.mg-touch) .joystick-base,
+body:not(.mg-touch) .attack-button {
+  display: none;
+}
+
+/* 좌하단: 조이스틱을 인식하는 넓은 터치 영역 (그 자체는 보이지 않는다) */
+#joystick-zone {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 56%;
+  height: 62%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.joystick-base {
+  position: fixed;
+  width: clamp(64px, 20vmin, 100px);
+  height: clamp(64px, 20vmin, 100px);
+  margin-left: calc(clamp(64px, 20vmin, 100px) / -2);
+  margin-top: calc(clamp(64px, 20vmin, 100px) / -2);
+  border-radius: 50%;
+  background: rgba(20, 40, 30, 0.4);
+  border: 2px solid rgba(220, 245, 220, 0.4);
+  pointer-events: none;
+  z-index: 5;
+}
+.joystick-base[hidden] { display: none; }
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: 42%;
+  margin-left: -21%;
+  margin-top: -21%;
+  border-radius: 50%;
+  background: rgba(224, 245, 224, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  will-change: transform;
+}
+
+/* 우하단: 공격 버튼 (플레이스홀더 — 실제 판정은 PHASE 5) */
+.attack-button {
+  position: fixed;
+  right: calc(4.5% + env(safe-area-inset-right));
+  bottom: calc(6% + env(safe-area-inset-bottom));
+  width: clamp(58px, 17vmin, 84px);
+  height: clamp(58px, 17vmin, 84px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(24px, 8vmin, 36px);
+  line-height: 1;
+  color: var(--mg-ink);
+  background: linear-gradient(180deg, var(--mg-cape, #9a3f3f) 0%, #6c2a2a 100%);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+  transition: transform 80ms ease, box-shadow 80ms ease, filter 80ms ease;
+}
+.attack-button.is-pressed {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  filter: brightness(1.15);
+}
+
+/* --------------------------------------------------------------------------
+   세로 방향 경고
+   -------------------------------------------------------------------------- */
+
+.rotate-icon {
+  font-size: clamp(44px, 14vmin, 96px);
+  animation: mg-rotate-hint 2.1s ease-in-out infinite;
+}
+
+.rotate-text {
+  margin-top: 1.2em;
+  font-size: clamp(15px, 4.4vmin, 26px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--mg-ink);
+}
+
+@keyframes mg-rotate-hint {
+  0%, 45%   { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(-90deg); }
+}
+
+/* 세로 경고가 떠 있는 동안 게임 화면은 감춘다 */
+body.mg-portrait #game-root { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-icon { animation: none; transform: rotate(-90deg); }
+}

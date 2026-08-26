@@ -1,0 +1,1901 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0b1410" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="description" content="달빛 숲의 수호자 — Moonlit Grove Prototype 0.1.0" />
+<title>달빛 숲의 수호자</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   달빛 숲의 수호자 — Moonlit Grove
+   style.css : 레이아웃 / 반응형 스케일 / 오버레이 UI
+   PHASE 1 범위: 캔버스 레터박스 스케일, 세로 방향 경고, 타이틀 오버레이
+   ========================================================================== */
+
+:root {
+  --mg-bg:        #05080a;   /* 레터박스 바깥 배경 */
+  --mg-ink:       #f2f7ea;
+  --mg-ink-dim:   #9fb39a;
+  --mg-leaf:      #4f9d5d;
+  --mg-leaf-deep: #2c6b3f;
+  --mg-moon:      #cfe4ff;
+  --mg-panel:     rgba(8, 18, 14, 0.88);
+  --mg-ui-font:   "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR",
+                  "Malgun Gothic", system-ui, sans-serif;
+  --mg-font-display: "Gowun Batang", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--mg-bg);
+  color: var(--mg-ink);
+  font-family: var(--mg-ui-font);
+  /* 모바일: 스크롤 바운스 / 더블탭 확대 / 텍스트 선택 방지 */
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   무대(stage) : 16:9 비율을 유지하며 화면 중앙에 letterbox 배치
+   실제 픽셀 크기는 game.js 의 resize() 가 계산해 인라인 스타일로 지정한다.
+   -------------------------------------------------------------------------- */
+
+#game-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mg-bg);
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;   /* JS 계산 전 초기 표시용 폴백 */
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  background: #0b1410;
+  box-shadow: 0 0 0 1px rgba(120, 180, 130, 0.18),
+              0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 픽셀아트 확대 시 보간 없이 또렷하게 */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* UI 레이어: 캔버스 위에 겹치며, 기본적으로 클릭을 통과시킨다 */
+#ui-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#ui-layer button,
+#ui-layer input,
+#ui-layer textarea,
+#ui-layer .interactive { pointer-events: auto; }
+
+/* --------------------------------------------------------------------------
+   HUD
+   -------------------------------------------------------------------------- */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  padding: calc(2.2% + env(safe-area-inset-top)) calc(2.6% + env(safe-area-inset-right))
+           calc(2.2% + env(safe-area-inset-bottom)) calc(2.6% + env(safe-area-inset-left));
+}
+
+.hud-slot {
+  position: absolute;
+  top: calc(2.2% + env(safe-area-inset-top));
+  font-size: clamp(11px, 2.4vh, 18px);
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+.hud-left  { left:  calc(2.6% + env(safe-area-inset-left)); }
+.hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
+
+/* --------------------------------------------------------------------------
+   오버레이 (타이틀 / 대화 / 결과 등 공통)
+   -------------------------------------------------------------------------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: radial-gradient(120% 90% at 50% 40%,
+              rgba(14, 32, 24, 0.72) 0%, rgba(3, 7, 6, 0.94) 100%);
+  pointer-events: auto;
+  z-index: 10;
+}
+.overlay[hidden] { display: none; }
+
+.overlay-fullscreen {
+  position: fixed;
+  z-index: 100;
+  background: #05080a;
+}
+
+.overlay-inner {
+  padding: 4vmin 6vmin;
+  max-width: 90%;
+}
+
+.game-title {
+  margin: 0;
+  font-family: var(--mg-font-display);
+  font-size: clamp(32px, 10vh, 80px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--mg-moon);
+  text-shadow: 0 0 18px rgba(150, 200, 255, 0.35),
+               0 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+.game-subtitle {
+  margin: 0.6em 0 0;
+  font-size: clamp(12px, 2.6vh, 20px);
+  color: var(--mg-leaf);
+  letter-spacing: 0.24em;
+}
+
+.game-version {
+  margin: 1.4em 0 0;
+  font-size: clamp(10px, 1.9vh, 14px);
+  color: var(--mg-ink-dim);
+  opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+   버튼 (엄지로 누르기 충분한 크기)
+   -------------------------------------------------------------------------- */
+
+.ui-button {
+  margin-top: 2.2em;
+  min-width: 46vmin;
+  max-width: 320px;
+  min-height: 48px;
+  padding: 0.8em 2em;
+  font-family: inherit;
+  font-size: clamp(14px, 2.9vh, 22px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--mg-ink);
+  background: linear-gradient(180deg, var(--mg-leaf) 0%, var(--mg-leaf-deep) 100%);
+  border: 2px solid rgba(220, 245, 220, 0.55);
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45);
+  transition: transform 90ms ease, box-shadow 90ms ease, filter 90ms ease;
+}
+.ui-button:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  filter: brightness(1.12);
+}
+
+/* --------------------------------------------------------------------------
+   터치 컨트롤 (모바일) — 터치 기기로 감지된 경우에만 표시된다 (input.js 가
+   body 에 mg-touch 클래스를 붙인다). 데스크톱에서는 완전히 숨긴다.
+   -------------------------------------------------------------------------- */
+
+/* 터치 미지원 기기에서는 명시적으로 숨긴다. 개별 컨트롤이 자기 display 값을
+   (flex 등) 갖고 있어도 이 규칙의 명시도(specificity)가 항상 더 높으므로
+   선언 순서와 무관하게 이긴다 — display 값 충돌을 피하기 위한 구조. */
+body:not(.mg-touch) #joystick-zone,
+body:not(.mg-touch) .joystick-base,
+body:not(.mg-touch) .attack-button {
+  display: none;
+}
+
+/* 좌하단: 조이스틱을 인식하는 넓은 터치 영역 (그 자체는 보이지 않는다) */
+#joystick-zone {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 56%;
+  height: 62%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.joystick-base {
+  position: fixed;
+  width: clamp(64px, 20vmin, 100px);
+  height: clamp(64px, 20vmin, 100px);
+  margin-left: calc(clamp(64px, 20vmin, 100px) / -2);
+  margin-top: calc(clamp(64px, 20vmin, 100px) / -2);
+  border-radius: 50%;
+  background: rgba(20, 40, 30, 0.4);
+  border: 2px solid rgba(220, 245, 220, 0.4);
+  pointer-events: none;
+  z-index: 5;
+}
+.joystick-base[hidden] { display: none; }
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: 42%;
+  margin-left: -21%;
+  margin-top: -21%;
+  border-radius: 50%;
+  background: rgba(224, 245, 224, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  will-change: transform;
+}
+
+/* 우하단: 공격 버튼 (플레이스홀더 — 실제 판정은 PHASE 5) */
+.attack-button {
+  position: fixed;
+  right: calc(4.5% + env(safe-area-inset-right));
+  bottom: calc(6% + env(safe-area-inset-bottom));
+  width: clamp(58px, 17vmin, 84px);
+  height: clamp(58px, 17vmin, 84px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(24px, 8vmin, 36px);
+  line-height: 1;
+  color: var(--mg-ink);
+  background: linear-gradient(180deg, var(--mg-cape, #9a3f3f) 0%, #6c2a2a 100%);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+  transition: transform 80ms ease, box-shadow 80ms ease, filter 80ms ease;
+}
+.attack-button.is-pressed {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  filter: brightness(1.15);
+}
+
+/* --------------------------------------------------------------------------
+   세로 방향 경고
+   -------------------------------------------------------------------------- */
+
+.rotate-icon {
+  font-size: clamp(44px, 14vmin, 96px);
+  animation: mg-rotate-hint 2.1s ease-in-out infinite;
+}
+
+.rotate-text {
+  margin-top: 1.2em;
+  font-size: clamp(15px, 4.4vmin, 26px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--mg-ink);
+}
+
+@keyframes mg-rotate-hint {
+  0%, 45%   { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(-90deg); }
+}
+
+/* 세로 경고가 떠 있는 동안 게임 화면은 감춘다 */
+body.mg-portrait #game-root { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-icon { animation: none; transform: rotate(-90deg); }
+}
+</style>
+</head>
+<body>
+
+  <!-- 게임 전체 루트: 캔버스 + 오버레이 UI가 같은 좌표계 위에 겹쳐진다 -->
+  <div id="game-root">
+
+    <!-- 내부 해상도 480x270 (16:9) 캔버스. CSS 크기는 JS가 화면비를 유지하며 계산 -->
+    <div id="stage">
+      <canvas id="game-canvas" width="480" height="270"></canvas>
+
+      <!-- 캔버스 위에 겹치는 DOM UI 레이어 (한글 텍스트 가독성을 위해 DOM 사용) -->
+      <div id="ui-layer">
+
+        <!-- HUD: 좌상단 하트(PHASE 7), 우상단 버전 -->
+        <div id="hud">
+          <div id="hud-hearts" class="hud-slot hud-left"></div>
+          <div id="hud-version" class="hud-slot hud-right">v0.1.0</div>
+        </div>
+
+        <!-- 터치 컨트롤 레이어 (모바일 전용, input.js 가 제어) -->
+        <div id="touch-layer">
+          <div id="joystick-zone" class="touch-controls"></div>
+          <div id="joystick-base" class="touch-controls joystick-base" hidden>
+            <div id="joystick-knob" class="joystick-knob"></div>
+          </div>
+          <button id="btn-attack" class="touch-controls attack-button" type="button" aria-label="공격">⚔</button>
+        </div>
+
+        <!-- 타이틀 화면 -->
+        <div id="overlay-title" class="overlay">
+          <div class="overlay-inner">
+            <h1 class="game-title">달빛 숲</h1>
+            <p class="game-subtitle">달빛 숲의 수호자</p>
+            <button id="btn-start" class="ui-button" type="button">모험 시작</button>
+            <p class="game-version">Prototype 0.1.0</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 세로 방향 경고 (게임 루트 바깥: 화면 전체를 덮는다) -->
+  <div id="overlay-orientation" class="overlay overlay-fullscreen" hidden>
+    <div class="overlay-inner">
+      <div class="rotate-icon">📱</div>
+      <p class="rotate-text">가로로 돌려서 플레이하세요</p>
+    </div>
+  </div>
+
+  <!-- 시스템 순서대로 로드 (클래식 스크립트: file:// 로도 열린다) -->
+<script>
+
+/* ---- js/audio.js ---- */
+/* ==========================================================================
+   audio.js — 사운드 관리 (합성 효과음)
+   PHASE 13 에서 구현
+   ========================================================================== */
+(function (global) {
+  'use strict';
+  var MG = global.MG = global.MG || {};
+
+  MG.Audio = {
+    // TODO: PHASE 13 에서 구현
+  };
+})(window);
+
+/* ---- js/collision.js ---- */
+/* ==========================================================================
+   collision.js — 충돌 판정
+   PHASE 4 범위:
+     - AABB(축 정렬 사각형) 겹침 판정
+     - 축 분리 이동 해석: X 로 밀고 정리한 뒤 Y 로 밀고 정리한다.
+       이렇게 하면 벽에 비스듬히 부딪혀도 멈추지 않고 자연스럽게 미끄러진다.
+     - 브로드페이즈: 이동 범위 근처의 solid 만 검사한다.
+   엔티티의 충돌 상자는 "발치 기준"이다 (x, y = 발 중심, w/h = 상자 크기).
+   캐릭터 전체가 아니라 발만 막아야 탑다운 시점이 자연스럽다.
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  var Collision = {
+    /* 두 사각형(좌상단 기준)이 겹치는가 */
+    overlaps: function (ax, ay, aw, ah, bx, by, bw, bh) {
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    },
+
+    /* 발치 상자를 좌상단 기준 사각형으로 변환 */
+    footRect: function (cx, cy, w, h) {
+      return { x: cx - w / 2, y: cy - h, w: w, h: h };
+    },
+
+    /* 이동 범위 주변의 solid 만 추린다 (매 프레임 전수 검사를 피한다) */
+    nearby: function (solids, cx, cy, radius) {
+      var out = [];
+      for (var i = 0; i < solids.length; i++) {
+        var s = solids[i];
+        if (s.x > cx + radius || s.x + s.w < cx - radius) continue;
+        if (s.y > cy + radius || s.y + s.h < cy - radius) continue;
+        out.push(s);
+      }
+      return out;
+    },
+
+    /* 해당 지점(발치 상자)이 막혀 있는가 */
+    isBlocked: function (cx, cy, w, h, solids) {
+      var r = this.footRect(cx, cy, w, h);
+      var near = this.nearby(solids, cx, cy, 64);
+      for (var i = 0; i < near.length; i++) {
+        var s = near[i];
+        if (this.overlaps(r.x, r.y, r.w, r.h, s.x, s.y, s.w, s.h)) return true;
+      }
+      return false;
+    },
+
+    /* (cx, cy) 에 있는 발치 상자를 (dx, dy) 만큼 움직이고 충돌을 해석한다.
+       반환: { x, y, hitX, hitY } — 해석된 최종 발 중심 좌표 */
+    moveAndCollide: function (cx, cy, w, h, dx, dy, solids) {
+      var hitX = false, hitY = false;
+
+      // 이동 전후를 모두 감싸는 범위의 solid 만 검사 대상으로 둔다
+      var near = this.nearby(
+        solids,
+        cx + dx / 2,
+        cy + dy / 2,
+        Math.max(Math.abs(dx), Math.abs(dy)) + Math.max(w, h) + 40
+      );
+
+      var i, s, r;
+
+      // ---- X 축 ----
+      if (dx !== 0) {
+        cx += dx;
+        r = this.footRect(cx, cy, w, h);
+        for (i = 0; i < near.length; i++) {
+          s = near[i];
+          if (!this.overlaps(r.x, r.y, r.w, r.h, s.x, s.y, s.w, s.h)) continue;
+          // 파고든 방향의 반대쪽 면으로 밀어낸다
+          if (dx > 0) cx = s.x - w / 2;
+          else cx = s.x + s.w + w / 2;
+          r = this.footRect(cx, cy, w, h);
+          hitX = true;
+        }
+      }
+
+      // ---- Y 축 ----
+      if (dy !== 0) {
+        cy += dy;
+        r = this.footRect(cx, cy, w, h);
+        for (i = 0; i < near.length; i++) {
+          s = near[i];
+          if (!this.overlaps(r.x, r.y, r.w, r.h, s.x, s.y, s.w, s.h)) continue;
+          if (dy > 0) cy = s.y;              // 아래로 이동 중 → 상단 면에 붙는다
+          else cy = s.y + s.h + h;           // 위로 이동 중 → 하단 면에 붙는다
+          r = this.footRect(cx, cy, w, h);
+          hitY = true;
+        }
+      }
+
+      return { x: cx, y: cy, hitX: hitX, hitY: hitY };
+    }
+  };
+
+  MG.Collision = Collision;
+})(window);
+
+/* ---- js/map.js ---- */
+/* ==========================================================================
+   map.js — 달빛 숲 — 초입 : 레이아웃 데이터와 렌더링
+   PHASE 4 범위:
+     - 화면(480x270)보다 큰 맵(1440x810) + 지형 데이터
+     - 나무 / 바위 / 물 / 풀 / 꽃 / 흙길
+     - 충돌 사각형 목록 제공 (collision.js 가 소비)
+     - 지면은 오프스크린 캔버스에 한 번만 굽고(bake) 매 프레임 blit 한다
+     - 나무/바위는 플레이어와 y 정렬해야 하므로 매 프레임 그린다 (game.js 가 정렬)
+   보물 상자(PHASE 8) / 덩굴 앵커(PHASE 10) 는 아직 배치하지 않는다.
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  var MAP_W = 1440;
+  var MAP_H = 810;
+
+  /* 남북으로 흐르는 물길 — 오른쪽 보물 지역을 완전히 갈라놓는다.
+     PHASE 10 의 덩굴 다리가 생기기 전에는 건널 수 없다. */
+  var RIVER = { x: 1000, y: 0, w: 130, h: MAP_H };
+
+  /* 흙길: 시작 지점에서 동쪽 물가까지 이어지는 주 통로 */
+  var PATH_MAIN = [
+    [200, 700], [420, 716], [640, 700], [820, 668], [962, 646]
+  ];
+  /* 갈림길: 주 통로 중간에서 북쪽 공터(모스키 발견 장소)로 */
+  var PATH_BRANCH = [
+    [620, 704], [634, 560], [598, 430], [470, 330], [318, 252]
+  ];
+
+  /* 나무가 자라지 않는 열린 공간 (중심x, 중심y, 반지름) */
+  var GLADES = [
+    [200, 700, 122],   // 시작 지점
+    [700, 400, 112],   // 숲 탐험 중간 공터
+    [300, 235, 138],   // 작은 공터 (PHASE 9 에서 모스키가 나타날 곳)
+    [962, 646, 92],    // 물가 — 건너편이 보이는 자리
+    /* 강 건너 보물 지역 (PHASE 8).
+       강둑(x≈994)에 섰을 때 카메라가 보여주는 범위는 x≈754~1234 이다.
+       "모스키를 얻기 전에 보물이 보여야 한다"는 핵심 설계를 지키려면
+       보물 자리가 반드시 이 범위 안에 있어야 하므로 강에 바짝 붙여 둔다. */
+    [1200, 636, 116]
+  ];
+
+  /* 바위 — 손으로 배치해 통로를 막지 않게 한다 */
+  var ROCK_SPOTS = [
+    [286, 616], [520, 762], [742, 512], [560, 236],
+    [868, 738], [402, 452], [1216, 742], [1332, 520], [126, 330]
+  ];
+
+  var PALETTE = {
+    grassDark:  '#17351f',
+    grassMid:   '#1e4527',
+    grassLight: '#2a5c33',
+    dirt:       '#5a4630',
+    dirtLight:  '#6d573c',
+    waterDeep:  '#123a4d',
+    waterMid:   '#17506a',
+    waterEdge:  '#2f7d8f',
+    trunk:      '#4a3423',
+    trunkDark:  '#33241a',
+    leafDark:   '#1c4a30',
+    leafMid:    '#276b3c',
+    leafLight:  '#39894a',
+    rock:       '#5c6672',
+    rockLight:  '#78838f',
+    rockMoss:   '#3f7a44',
+    flower:     ['#e8d26a', '#dd7ba6', '#cfe4ff']
+  };
+
+  /* 결정적 난수 — 새로고침해도 항상 같은 숲이 나오도록 */
+  function makeRng(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  /* 점과 선분(폴리라인) 사이의 최단 거리 — 길 주변을 비워두는 데 사용 */
+  function distToPolyline(px, py, pts) {
+    var best = Infinity;
+    for (var i = 0; i < pts.length - 1; i++) {
+      var ax = pts[i][0], ay = pts[i][1];
+      var bx = pts[i + 1][0], by = pts[i + 1][1];
+      var dx = bx - ax, dy = by - ay;
+      var len2 = dx * dx + dy * dy;
+      var t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+      t = t < 0 ? 0 : (t > 1 ? 1 : t);
+      var cx = ax + t * dx, cy = ay + t * dy;
+      var d = Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  var Map = {
+    WIDTH: MAP_W,
+    HEIGHT: MAP_H,
+    RIVER: RIVER,
+
+    trees: [],
+    rocks: [],
+    fireflies: [],
+    solids: [],          // 충돌 사각형 {x, y, w, h} (좌상단 기준)
+    ground: null,        // 미리 구워둔 지면 캔버스
+
+    /* 플레이어 시작 위치 (player.js 가 참조) */
+    spawn: { x: 200, y: 706 },
+
+    init: function () {
+      this.buildProps();
+      this.buildSolids();
+      this.buildFireflies();
+      this.bakeGround();
+    },
+
+    /* ------------------------------------------------------- 오브젝트 배치 */
+    buildProps: function () {
+      var rng = makeRng(20260826);
+      this.trees = [];
+      this.rocks = [];
+
+      var step = 62;
+      for (var gy = 24; gy < MAP_H - 10; gy += step) {
+        for (var gx = 24; gx < MAP_W - 10; gx += step) {
+          var x = gx + (rng() - 0.5) * 40;
+          var y = gy + (rng() - 0.5) * 40;
+
+          // 물속에는 나무가 없다 (물가에서 약간 띄운다)
+          if (x > RIVER.x - 26 && x < RIVER.x + RIVER.w + 26) continue;
+
+          // 열린 공터 안에는 나무가 없다
+          var inGlade = false;
+          for (var i = 0; i < GLADES.length; i++) {
+            var g = GLADES[i];
+            var ddx = x - g[0], ddy = y - g[1];
+            if (ddx * ddx + ddy * ddy < g[2] * g[2]) { inGlade = true; break; }
+          }
+          if (inGlade) continue;
+
+          // 길 위에도 나무가 없다
+          if (distToPolyline(x, y, PATH_MAIN) < 48) continue;
+          if (distToPolyline(x, y, PATH_BRANCH) < 44) continue;
+
+          // 맵 가장자리는 항상 빽빽하게 채워 공간을 닫고,
+          // 안쪽은 일부를 비워 자연스럽게 만든다
+          var nearEdge = (x < 78 || x > MAP_W - 78 || y < 78 || y > MAP_H - 78);
+          if (!nearEdge && rng() > 0.82) continue;
+
+          this.trees.push({
+            x: Math.round(x),
+            y: Math.round(y),
+            scale: 0.82 + rng() * 0.42,
+            tint: rng()
+          });
+        }
+      }
+
+      for (var r = 0; r < ROCK_SPOTS.length; r++) {
+        this.rocks.push({
+          x: ROCK_SPOTS[r][0],
+          y: ROCK_SPOTS[r][1],
+          scale: 0.85 + rng() * 0.4
+        });
+      }
+    },
+
+    buildFireflies: function () {
+      var rng = makeRng(77123);
+      this.fireflies = [];
+      for (var i = 0; i < 90; i++) {
+        this.fireflies.push({
+          x: rng() * MAP_W,
+          y: rng() * MAP_H,
+          phase: rng() * Math.PI * 2,
+          speed: 0.5 + rng() * 0.8
+        });
+      }
+    },
+
+    /* --------------------------------------------------------- 충돌 데이터 */
+    buildSolids: function () {
+      var s = [];
+
+      // 맵 바깥으로 나가지 못하게 막는 테두리
+      var T = 16;
+      s.push({ x: -T, y: -T, w: MAP_W + T * 2, h: T });          // 위
+      s.push({ x: -T, y: MAP_H, w: MAP_W + T * 2, h: T });       // 아래
+      s.push({ x: -T, y: -T, w: T, h: MAP_H + T * 2 });          // 왼쪽
+      s.push({ x: MAP_W, y: -T, w: T, h: MAP_H + T * 2 });       // 오른쪽
+
+      // 물 — 통과 불가
+      s.push({ x: RIVER.x, y: RIVER.y, w: RIVER.w, h: RIVER.h, water: true });
+
+      // 나무 밑동 (캐노피가 아니라 밑동만 막아야 자연스럽다)
+      for (var i = 0; i < this.trees.length; i++) {
+        var t = this.trees[i];
+        var tw = Math.round(13 * t.scale);
+        s.push({ x: t.x - tw / 2, y: t.y - 5, w: tw, h: 8 });
+      }
+
+      // 바위
+      for (var r = 0; r < this.rocks.length; r++) {
+        var k = this.rocks[r];
+        var rw = Math.round(20 * k.scale);
+        s.push({ x: k.x - rw / 2, y: k.y - 7, w: rw, h: 10 });
+      }
+
+      this.solids = s;
+    },
+
+    /* --------------------------------------------------- 지면 굽기 (1회) */
+    bakeGround: function () {
+      var c = document.createElement('canvas');
+      c.width = MAP_W;
+      c.height = MAP_H;
+      var g = c.getContext('2d');
+      var rng = makeRng(31337);
+
+      // 기본 풀밭
+      g.fillStyle = PALETTE.grassMid;
+      g.fillRect(0, 0, MAP_W, MAP_H);
+
+      // 넓은 색 얼룩으로 단조로움을 깬다.
+      // 진하면 "커다란 원"으로 보이므로 아주 옅게 여러 번 겹친다.
+      for (var i = 0; i < 420; i++) {
+        var bx = rng() * MAP_W, by = rng() * MAP_H;
+        var br = 30 + rng() * 70;
+        g.fillStyle = rng() > 0.5
+          ? 'rgba(20, 46, 27, 0.10)'
+          : 'rgba(42, 92, 51, 0.09)';
+        g.beginPath();
+        g.arc(bx, by, br, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      this.bakePath(g, PATH_MAIN, 34);
+      this.bakePath(g, PATH_BRANCH, 26);
+      this.bakeRiver(g, rng);
+
+      // 풀 포기 — 물 위에는 그리지 않는다
+      for (var t = 0; t < 2600; t++) {
+        var gx = rng() * MAP_W, gy = rng() * MAP_H;
+        if (gx > RIVER.x - 8 && gx < RIVER.x + RIVER.w + 8) continue;
+        g.fillStyle = rng() > 0.5 ? PALETTE.grassLight : PALETTE.grassDark;
+        var gh = 2 + Math.round(rng() * 2);
+        g.fillRect(Math.round(gx), Math.round(gy), 1, gh);
+        if (rng() > 0.6) g.fillRect(Math.round(gx) + 2, Math.round(gy) + 1, 1, gh - 1);
+      }
+
+      // 꽃 — 공터 주변에 모여 피게 한다
+      for (var f = 0; f < 190; f++) {
+        var fx, fy;
+        if (rng() > 0.45) {
+          var gl = GLADES[Math.floor(rng() * GLADES.length)];
+          var ang = rng() * Math.PI * 2;
+          var rad = rng() * gl[2] * 0.9;
+          fx = gl[0] + Math.cos(ang) * rad;
+          fy = gl[1] + Math.sin(ang) * rad;
+        } else {
+          fx = rng() * MAP_W;
+          fy = rng() * MAP_H;
+        }
+        if (fx > RIVER.x - 12 && fx < RIVER.x + RIVER.w + 12) continue;
+        if (fx < 4 || fx > MAP_W - 4 || fy < 4 || fy > MAP_H - 4) continue;
+
+        g.fillStyle = PALETTE.flower[Math.floor(rng() * PALETTE.flower.length)];
+        g.fillRect(Math.round(fx), Math.round(fy), 2, 2);
+        g.fillStyle = 'rgba(24, 60, 38, 0.7)';
+        g.fillRect(Math.round(fx), Math.round(fy) + 2, 1, 2);
+      }
+
+      this.ground = c;
+    },
+
+    bakePath: function (g, pts, width) {
+      g.save();
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+
+      // 가장자리를 부드럽게 만들기 위해 겹쳐 그린다
+      var layers = [
+        { w: width + 8, color: 'rgba(74, 60, 40, 0.35)' },
+        { w: width,     color: PALETTE.dirt },
+        { w: width - 12, color: PALETTE.dirtLight }
+      ];
+      for (var l = 0; l < layers.length; l++) {
+        if (layers[l].w <= 0) continue;
+        g.strokeStyle = layers[l].color;
+        g.lineWidth = layers[l].w;
+        g.beginPath();
+        g.moveTo(pts[0][0], pts[0][1]);
+        for (var i = 1; i < pts.length; i++) {
+          var prev = pts[i - 1], cur = pts[i];
+          var mx = (prev[0] + cur[0]) / 2, my = (prev[1] + cur[1]) / 2;
+          g.quadraticCurveTo(prev[0], prev[1], mx, my);
+        }
+        g.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+        g.stroke();
+      }
+      g.restore();
+    },
+
+    bakeRiver: function (g, rng) {
+      // 물 본체
+      var grad = g.createLinearGradient(RIVER.x, 0, RIVER.x + RIVER.w, 0);
+      grad.addColorStop(0, PALETTE.waterEdge);
+      grad.addColorStop(0.22, PALETTE.waterMid);
+      grad.addColorStop(0.5, PALETTE.waterDeep);
+      grad.addColorStop(0.78, PALETTE.waterMid);
+      grad.addColorStop(1, PALETTE.waterEdge);
+      g.fillStyle = grad;
+      g.fillRect(RIVER.x, RIVER.y, RIVER.w, RIVER.h);
+
+      // 물가 — 젖은 흙과 자갈로 경계를 분명히 한다
+      for (var y = 0; y < MAP_H; y += 3) {
+        var wob = Math.sin(y * 0.045) * 4 + Math.sin(y * 0.13) * 2;
+        g.fillStyle = 'rgba(66, 54, 38, 0.75)';
+        g.fillRect(RIVER.x - 7 + wob, y, 8, 3);
+        g.fillRect(RIVER.x + RIVER.w - 1 - wob, y, 8, 3);
+
+        if (rng() > 0.82) {
+          g.fillStyle = 'rgba(120, 131, 143, 0.65)';
+          g.fillRect(RIVER.x - 5 + wob, y, 2, 2);
+          g.fillRect(RIVER.x + RIVER.w + 2 - wob, y + 1, 2, 2);
+        }
+      }
+    },
+
+    /* ------------------------------------------------------------ 렌더링 */
+
+    /* 지면 — 카메라 변환이 적용된 상태에서 통째로 blit 한다 (브라우저가 클립) */
+    renderGround: function (ctx) {
+      if (this.ground) ctx.drawImage(this.ground, 0, 0);
+    },
+
+    /* 물 위 반짝임 — 애니메이션이므로 매 프레임 그린다 (보이는 부분만) */
+    renderWater: function (ctx, cam, time) {
+      var top = Math.max(0, cam.y - 20);
+      var bottom = Math.min(MAP_H, cam.y + cam.h + 20);
+      if (cam.x > RIVER.x + RIVER.w || cam.x + cam.w < RIVER.x) return;
+
+      ctx.save();
+      for (var y = Math.floor(top / 8) * 8; y < bottom; y += 8) {
+        var t = time * 0.7 + y * 0.06;
+        var sway = Math.sin(t) * 10;
+        var alpha = 0.10 + 0.10 * Math.sin(t * 1.7);
+        ctx.fillStyle = 'rgba(190, 232, 245, ' + alpha.toFixed(3) + ')';
+        ctx.fillRect(RIVER.x + 18 + sway, y, 22, 1);
+        ctx.fillRect(RIVER.x + 74 - sway, y + 4, 16, 1);
+      }
+      ctx.restore();
+    },
+
+    /* 반딧불 — 화면 안에 있는 것만 */
+    renderFireflies: function (ctx, cam, time) {
+      for (var i = 0; i < this.fireflies.length; i++) {
+        var f = this.fireflies[i];
+        var fx = f.x + Math.sin(time * f.speed + f.phase) * 10;
+        var fy = f.y + Math.cos(time * f.speed * 0.8 + f.phase) * 7;
+        if (fx < cam.x - 8 || fx > cam.x + cam.w + 8) continue;
+        if (fy < cam.y - 8 || fy > cam.y + cam.h + 8) continue;
+
+        var glow = 0.30 + 0.34 * Math.sin(time * 2.2 + f.phase);
+        if (glow <= 0.02) continue;
+        ctx.fillStyle = 'rgba(206, 244, 168, ' + glow.toFixed(3) + ')';
+        ctx.fillRect(Math.round(fx), Math.round(fy), 2, 2);
+      }
+    },
+
+    /* y 정렬이 필요한 오브젝트를 game.js 에 넘긴다 (화면 밖은 제외) */
+    collectProps: function (out, cam) {
+      var i, o;
+      for (i = 0; i < this.trees.length; i++) {
+        o = this.trees[i];
+        if (o.x < cam.x - 40 || o.x > cam.x + cam.w + 40) continue;
+        if (o.y < cam.y - 80 || o.y > cam.y + cam.h + 40) continue;
+        out.push({ y: o.y, obj: o, kind: 'tree' });
+      }
+      for (i = 0; i < this.rocks.length; i++) {
+        o = this.rocks[i];
+        if (o.x < cam.x - 40 || o.x > cam.x + cam.w + 40) continue;
+        if (o.y < cam.y - 40 || o.y > cam.y + cam.h + 40) continue;
+        out.push({ y: o.y, obj: o, kind: 'rock' });
+      }
+      return out;
+    },
+
+    renderProp: function (ctx, entry) {
+      if (entry.kind === 'tree') this.drawTree(ctx, entry.obj);
+      else if (entry.kind === 'rock') this.drawRock(ctx, entry.obj);
+    },
+
+    drawTree: function (ctx, t) {
+      var x = t.x, y = t.y, s = t.scale;
+      var i;
+
+      // 그림자
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.34)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 2, 11 * s, 4 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 밑동 — 캐노피와 확실히 이어지도록 굵고 길게
+      var tw = Math.max(4, Math.round(7 * s));
+      var trunkTop = y - 17 * s;
+      ctx.fillStyle = PALETTE.trunk;
+      ctx.fillRect(Math.round(x - tw / 2), Math.round(trunkTop), tw, Math.round(18 * s));
+      ctx.fillStyle = PALETTE.trunkDark;
+      ctx.fillRect(Math.round(x - tw / 2), Math.round(trunkTop), Math.max(1, Math.round(tw / 3)), Math.round(18 * s));
+
+      // 캐노피 — 원 세 개를 겹쳐 뭉툭한 실루엣을 만든다.
+      // 밑동 위에 걸치도록 낮게 앉혀 "떠 있는 공"처럼 보이지 않게 한다.
+      var cy = y - 24 * s;
+      var lobes = [
+        [x - 9 * s, cy + 6 * s, 11.5 * s],
+        [x + 9 * s, cy + 5 * s, 10.5 * s],
+        [x,         cy - 3 * s, 13.5 * s]
+      ];
+
+      // 어두운 테두리 — 풀밭과 대비를 만들어 실루엣을 읽히게 한다
+      ctx.fillStyle = '#0d2416';
+      for (i = 0; i < lobes.length; i++) {
+        ctx.beginPath();
+        ctx.arc(lobes[i][0], lobes[i][1], lobes[i][2] + 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = t.tint > 0.5 ? PALETTE.leafDark : '#20573a';
+      for (i = 0; i < lobes.length; i++) {
+        ctx.beginPath();
+        ctx.arc(lobes[i][0], lobes[i][1], lobes[i][2], 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 달빛을 받는 윗면
+      ctx.fillStyle = PALETTE.leafMid;
+      ctx.beginPath();
+      ctx.arc(x - 3 * s, cy - 6 * s, 9 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.leafLight;
+      ctx.beginPath();
+      ctx.arc(x - 5 * s, cy - 9 * s, 5 * s, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 잎 결 — 가장자리를 살짝 흩어 딱딱한 원을 깬다
+      ctx.fillStyle = 'rgba(13, 36, 22, 0.55)';
+      for (i = 0; i < 5; i++) {
+        var a = (i / 5) * Math.PI * 2 + t.tint * 3;
+        ctx.fillRect(
+          Math.round(x + Math.cos(a) * 12 * s),
+          Math.round(cy + Math.sin(a) * 9 * s),
+          Math.max(1, Math.round(2 * s)),
+          Math.max(1, Math.round(2 * s))
+        );
+      }
+    },
+
+    drawRock: function (ctx, r) {
+      var x = r.x, y = r.y, s = r.scale;
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 2, 12 * s, 4 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = PALETTE.rock;
+      ctx.beginPath();
+      ctx.moveTo(x - 11 * s, y + 2);
+      ctx.lineTo(x - 8 * s, y - 9 * s);
+      ctx.lineTo(x - 1 * s, y - 13 * s);
+      ctx.lineTo(x + 8 * s, y - 8 * s);
+      ctx.lineTo(x + 11 * s, y + 2);
+      ctx.closePath();
+      ctx.fill();
+
+      // 위쪽 밝은 면
+      ctx.fillStyle = PALETTE.rockLight;
+      ctx.beginPath();
+      ctx.moveTo(x - 8 * s, y - 9 * s);
+      ctx.lineTo(x - 1 * s, y - 13 * s);
+      ctx.lineTo(x + 3 * s, y - 9 * s);
+      ctx.lineTo(x - 4 * s, y - 6 * s);
+      ctx.closePath();
+      ctx.fill();
+
+      // 이끼
+      ctx.fillStyle = PALETTE.rockMoss;
+      ctx.fillRect(Math.round(x - 6 * s), Math.round(y - 10 * s), Math.round(4 * s), Math.round(2 * s));
+      ctx.fillRect(Math.round(x + 2 * s), Math.round(y - 7 * s), Math.round(3 * s), Math.round(2 * s));
+    }
+  };
+
+  MG.Map = Map;
+})(window);
+
+/* ---- js/input.js ---- */
+/* ==========================================================================
+   input.js — 키보드 / 터치 입력
+   PHASE 1 범위: 키 상태 추적과 정규화된 이동 axis
+   PHASE 3 범위: 모바일 가상 조이스틱(좌하단) + 공격 버튼 플레이스홀더(우하단)
+     - Pointer Events 로 터치/마우스를 동일하게 처리한다
+     - 조이스틱은 터치 영역 안 아무 곳이나 짚으면 그 자리에 즉시 나타나는
+       "플로팅" 방식이라 반응이 즉각적이다
+     - 공격 버튼은 시각적 눌림 상태와 1프레임 엣지 트리거만 제공한다.
+       실제 공격 판정(히트박스/데미지)은 PHASE 5 combat.js 의 몫이다.
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  // 게임에서 사용하는 키만 브라우저 기본 동작(스크롤 등)을 막는다
+  var BLOCKED = {
+    ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space: 1
+  };
+
+  var JOY_RADIUS = 40;   // 조이스틱 최대 이동 반경(px, 화면 좌표)
+  var JOY_DEADZONE = 6;  // 중심 부근 흔들림 무시 반경(px)
+
+  var Input = {
+    keys: {},                  // code -> true/false
+    axis: { x: 0, y: 0 },      // 정규화된 이동 입력 (-1 ~ 1), 키보드/터치 통합
+    attackPressed: false,      // 공격 버튼이 "이번 프레임에" 눌렸는지 (1프레임 엣지)
+    hasTouch: false,
+
+    _joyPointerId: null,
+    _joyOriginX: 0,
+    _joyOriginY: 0,
+    _touchAxis: { x: 0, y: 0 },
+    _attackPointerId: null,
+    _attackRequested: false,
+
+    init: function () {
+      var self = this;
+
+      global.addEventListener('keydown', function (e) {
+        if (e.repeat) return;
+        self.keys[e.code] = true;
+        if (BLOCKED[e.code]) e.preventDefault();
+      });
+
+      global.addEventListener('keyup', function (e) {
+        self.keys[e.code] = false;
+        if (BLOCKED[e.code]) e.preventDefault();
+      });
+
+      // 탭 전환 시 키가 눌린 채로 남지 않게 초기화
+      global.addEventListener('blur', function () { self.reset(); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) self.reset();
+      });
+
+      this.hasTouch = ('ontouchstart' in global) || navigator.maxTouchPoints > 0;
+      document.body.classList.toggle('mg-touch', this.hasTouch);
+
+      if (this.hasTouch) this.initTouchControls();
+    },
+
+    reset: function () {
+      this.keys = {};
+      this.axis.x = 0;
+      this.axis.y = 0;
+      this._touchAxis.x = 0;
+      this._touchAxis.y = 0;
+      this._joyPointerId = null;
+      this._attackPointerId = null;
+      this._attackRequested = false;
+      this.hideJoystick();
+      this.setAttackPressedVisual(false);
+    },
+
+    isDown: function (code) {
+      return !!this.keys[code];
+    },
+
+    /* -------------------------------------------------------- 터치 컨트롤 */
+    initTouchControls: function () {
+      var self = this;
+      this.el = {
+        zone: document.getElementById('joystick-zone'),
+        base: document.getElementById('joystick-base'),
+        knob: document.getElementById('joystick-knob'),
+        attackBtn: document.getElementById('btn-attack')
+      };
+      if (!this.el.zone || !this.el.attackBtn) return;
+
+      this.el.zone.addEventListener('pointerdown', function (e) {
+        if (self._joyPointerId !== null) return; // 이미 다른 손가락이 조작 중
+        self._joyPointerId = e.pointerId;
+        self._joyOriginX = e.clientX;
+        self._joyOriginY = e.clientY;
+        self.showJoystickAt(e.clientX, e.clientY);
+        self.updateJoystick(e.clientX, e.clientY);
+        if (self.el.zone.setPointerCapture) {
+          try { self.el.zone.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+        e.preventDefault();
+      });
+
+      this.el.zone.addEventListener('pointermove', function (e) {
+        if (e.pointerId !== self._joyPointerId) return;
+        self.updateJoystick(e.clientX, e.clientY);
+        e.preventDefault();
+      });
+
+      var releaseJoystick = function (e) {
+        if (e.pointerId !== self._joyPointerId) return;
+        self._joyPointerId = null;
+        self._touchAxis.x = 0;
+        self._touchAxis.y = 0;
+        self.hideJoystick();
+      };
+      this.el.zone.addEventListener('pointerup', releaseJoystick);
+      this.el.zone.addEventListener('pointercancel', releaseJoystick);
+
+      // 공격 버튼: 시각적 눌림 상태 + 1프레임 엣지 트리거
+      this.el.attackBtn.addEventListener('pointerdown', function (e) {
+        if (self._attackPointerId !== null) return;
+        self._attackPointerId = e.pointerId;
+        self._attackRequested = true;
+        self.setAttackPressedVisual(true);
+        if (self.el.attackBtn.setPointerCapture) {
+          try { self.el.attackBtn.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+        e.preventDefault();
+      });
+
+      var releaseAttack = function (e) {
+        if (e.pointerId !== self._attackPointerId) return;
+        self._attackPointerId = null;
+        self.setAttackPressedVisual(false);
+      };
+      this.el.attackBtn.addEventListener('pointerup', releaseAttack);
+      this.el.attackBtn.addEventListener('pointercancel', releaseAttack);
+    },
+
+    showJoystickAt: function (x, y) {
+      if (!this.el || !this.el.base) return;
+      this.el.base.style.left = x + 'px';
+      this.el.base.style.top = y + 'px';
+      this.el.base.hidden = false;
+    },
+
+    hideJoystick: function () {
+      if (!this.el || !this.el.base || !this.el.knob) return;
+      this.el.base.hidden = true;
+      this.el.knob.style.transform = 'translate(0px, 0px)';
+    },
+
+    updateJoystick: function (x, y) {
+      var dx = x - this._joyOriginX;
+      var dy = y - this._joyOriginY;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < JOY_DEADZONE) {
+        this._touchAxis.x = 0;
+        this._touchAxis.y = 0;
+        if (this.el && this.el.knob) this.el.knob.style.transform = 'translate(0px, 0px)';
+        return;
+      }
+
+      var clamped = Math.min(dist, JOY_RADIUS);
+      var nx = dx / dist;
+      var ny = dy / dist;
+      var kx = nx * clamped;
+      var ky = ny * clamped;
+
+      this._touchAxis.x = kx / JOY_RADIUS;
+      this._touchAxis.y = ky / JOY_RADIUS;
+
+      if (this.el && this.el.knob) {
+        this.el.knob.style.transform = 'translate(' + kx.toFixed(1) + 'px, ' + ky.toFixed(1) + 'px)';
+      }
+    },
+
+    setAttackPressedVisual: function (pressed) {
+      if (this.el && this.el.attackBtn) {
+        this.el.attackBtn.classList.toggle('is-pressed', pressed);
+      }
+    },
+
+    /* 매 프레임 이동 입력을 갱신 (player.js 가 axis 를, 이후 combat.js 가
+       attackPressed 를 사용한다) */
+    update: function () {
+      var kx = 0, ky = 0;
+      if (this.isDown('KeyA') || this.isDown('ArrowLeft'))  kx -= 1;
+      if (this.isDown('KeyD') || this.isDown('ArrowRight')) kx += 1;
+      if (this.isDown('KeyW') || this.isDown('ArrowUp'))    ky -= 1;
+      if (this.isDown('KeyS') || this.isDown('ArrowDown'))  ky += 1;
+
+      // 대각선 이동이 빨라지지 않도록 정규화
+      if (kx !== 0 && ky !== 0) {
+        var inv = Math.SQRT1_2;
+        kx *= inv;
+        ky *= inv;
+      }
+
+      var joyActive = this._joyPointerId !== null;
+      this.axis.x = joyActive ? this._touchAxis.x : kx;
+      this.axis.y = joyActive ? this._touchAxis.y : ky;
+
+      var spaceEdge = this.isDown('Space') && !this._spaceWasDown;
+      this._spaceWasDown = this.isDown('Space');
+
+      this.attackPressed = this._attackRequested || spaceEdge;
+      this._attackRequested = false;
+    }
+  };
+
+  MG.Input = Input;
+})(window);
+
+/* ---- js/combat.js ---- */
+/* ==========================================================================
+   combat.js — 공격 히트박스와 데미지 판정
+   PHASE 5 에서 구현
+   ========================================================================== */
+(function (global) {
+  'use strict';
+  var MG = global.MG = global.MG || {};
+
+  MG.Combat = {
+    // TODO: PHASE 5 에서 구현
+  };
+})(window);
+
+/* ---- js/player.js ---- */
+/* ==========================================================================
+   player.js — 플레이어(LUKA) 이동 / 방향 / 걷기 애니메이션
+   PHASE 2 범위:
+     - 부드러운 8방향 이동 (input.js 의 정규화된 axis 사용)
+     - 4방향 facing (상/하/좌/우) — 공격 방향(PHASE 5)의 기준이 된다
+     - 캔버스 경계 클램프 (PHASE 4 전까지 임시 경계. 실제 맵 충돌은 collision.js)
+     - 절차적으로 그린 원본 캐릭터 (이끼/덩굴 숲 탐험가, 둥근 여행 가방)
+   체력(PHASE 7), 공격(PHASE 5), 상호작용(PHASE 9)은 아직 다루지 않는다.
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  var SPEED = 84;          // 내부 픽셀/초
+  var FOOT_W = 11;         // 충돌 상자 (발치) — 캐릭터 전체가 아니라 발만 막는다
+  var FOOT_H = 6;
+  var STEP_FREQ = 9;        // 걷기 사이클 속도
+  var IDLE_FREQ = 1.6;      // 정지 시 미세한 흔들림 속도
+
+  // LUKA 고유 팔레트 — 기존 판타지 캐릭터와 겹치지 않는 배색
+  var C = {
+    skin:        '#e8b98a',
+    hair:        '#3b2a20',
+    hairShade:   '#241a14',
+    tunic:       '#2e6b6e',   // 청록 (링의 초록 튜닉과 구분되는 색)
+    tunicShade:  '#1c4547',
+    cape:        '#9a3f3f',   // 따뜻한 다갈색 망토
+    capeShade:   '#712d2d',
+    satchel:     '#b98a52',   // 둥근 여행 가방
+    satchelShade:'#8a6236',
+    sword:       '#dbe2e8',
+    swordShade:  '#8f98a3',
+    hilt:        '#5b3a22',
+    outline:     'rgba(10, 8, 6, 0.55)'
+  };
+
+  function rect(ctx, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x), Math.round(y), w, h);
+  }
+
+  var Player = {
+    x: 0, y: 0,             // 발 중심 좌표 (내부 해상도 기준)
+    facing: 'down',         // 'up' | 'down' | 'left' | 'right'
+    moving: false,
+    animT: 0,
+
+    FOOT_W: FOOT_W,
+    FOOT_H: FOOT_H,
+
+    init: function () {
+      var spawn = (MG.Map && MG.Map.spawn) || { x: 200, y: 706 };
+      this.x = spawn.x;
+      this.y = spawn.y;
+      this.facing = 'down';
+      this.moving = false;
+      this.animT = 0;
+    },
+
+    update: function (dt) {
+      this.animT += dt;
+
+      var axis = (MG.Input && MG.Input.axis) || { x: 0, y: 0 };
+      var canMove = MG.Game && MG.Game.state === 'PLAY';
+      var ax = canMove ? axis.x : 0;
+      var ay = canMove ? axis.y : 0;
+
+      this.moving = (ax !== 0 || ay !== 0);
+
+      if (this.moving) {
+        // 대각선 이동이 더 빠르지 않도록 input.js 에서 이미 정규화되어 있다
+        var dx = ax * SPEED * dt;
+        var dy = ay * SPEED * dt;
+
+        var solids = (MG.Map && MG.Map.solids) || [];
+        if (MG.Collision && solids.length) {
+          var res = MG.Collision.moveAndCollide(this.x, this.y, FOOT_W, FOOT_H, dx, dy, solids);
+          this.x = res.x;
+          this.y = res.y;
+        } else {
+          this.x += dx;
+          this.y += dy;
+        }
+
+        if (Math.abs(ax) > Math.abs(ay)) {
+          this.facing = ax > 0 ? 'right' : 'left';
+        } else {
+          this.facing = ay > 0 ? 'down' : 'up';
+        }
+      }
+    },
+
+    /* ---------------------------------------------------------- render */
+    render: function (ctx) {
+      var cx = this.x;
+      var feetY = this.y;
+
+      var stepPhase = Math.sin(this.animT * STEP_FREQ);
+      var bob, stepOffset;
+
+      if (this.moving) {
+        bob = Math.abs(stepPhase) * 1.4;
+        stepOffset = stepPhase * 2.2;
+      } else {
+        bob = Math.sin(this.animT * IDLE_FREQ) * 0.4;
+        stepOffset = 0;
+      }
+
+      // 부드러운 그림자 (지면에 고정, 발 위치 기준)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      ctx.beginPath();
+      ctx.ellipse(Math.round(cx), Math.round(feetY + 1), 5, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      var topY = feetY - bob;
+
+      if (this.facing === 'down') this.drawFront(ctx, cx, topY, stepOffset);
+      else if (this.facing === 'up') this.drawBack(ctx, cx, topY, stepOffset);
+      else this.drawSide(ctx, cx, topY, stepOffset, this.facing === 'right');
+    },
+
+    /* 정면(아래를 바라봄) */
+    drawFront: function (ctx, cx, feetY, step) {
+      var lHair = -1, rHair = 1; // 미사용 방지용 참조 없음(가독성 주석)
+
+      // 망토 (몸통 뒤로 살짝 보임)
+      rect(ctx, cx - 6, feetY - 15, 3, 9, C.capeShade);
+      rect(ctx, cx + 3, feetY - 15, 3, 9, C.capeShade);
+
+      // 다리 (걷기 사이클에 따라 번갈아 이동)
+      rect(ctx, cx - 4, feetY - 5 - Math.max(0, step), 3, 5, C.tunicShade);
+      rect(ctx, cx + 1, feetY - 5 + Math.max(0, -step), 3, 5, C.tunicShade);
+
+      // 몸통(튜닉)
+      rect(ctx, cx - 5, feetY - 14, 10, 10, C.tunic);
+      rect(ctx, cx - 5, feetY - 6, 10, 2, C.tunicShade);
+
+      // 여행 가방 (허리 오른쪽, 둥근 실루엣)
+      ctx.fillStyle = C.satchel;
+      ctx.beginPath();
+      ctx.arc(Math.round(cx + 5), Math.round(feetY - 9), 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = C.satchelShade;
+      ctx.fillRect(Math.round(cx + 4), Math.round(feetY - 8), 3, 1);
+
+      // 검(허리에 소지, 전투 전이므로 정지 상태)
+      rect(ctx, cx - 7, feetY - 10, 2, 6, C.swordShade);
+      rect(ctx, cx - 8, feetY - 11, 3, 2, C.hilt);
+
+      // 팔
+      rect(ctx, cx - 6, feetY - 13, 2, 6, C.tunic);
+      rect(ctx, cx + 4, feetY - 13, 2, 6, C.tunic);
+
+      // 머리
+      ctx.fillStyle = C.skin;
+      ctx.beginPath();
+      ctx.arc(Math.round(cx), Math.round(feetY - 18), 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 머리카락 (앞머리 + 옆 볼륨, 오리지널 헤어스타일)
+      rect(ctx, cx - 4, feetY - 22, 8, 3, C.hair);
+      rect(ctx, cx - 5, feetY - 20, 2, 4, C.hair);
+      rect(ctx, cx + 3, feetY - 20, 2, 4, C.hair);
+
+      // 눈
+      rect(ctx, cx - 2, feetY - 18, 1, 1, C.outline);
+      rect(ctx, cx + 1, feetY - 18, 1, 1, C.outline);
+    },
+
+    /* 뒷모습(위를 바라봄) */
+    drawBack: function (ctx, cx, feetY, step) {
+      // 다리
+      rect(ctx, cx - 4, feetY - 5 - Math.max(0, step), 3, 5, C.tunicShade);
+      rect(ctx, cx + 1, feetY - 5 + Math.max(0, -step), 3, 5, C.tunicShade);
+
+      // 망토 (등 전체를 덮는 주 실루엣)
+      rect(ctx, cx - 6, feetY - 16, 12, 11, C.cape);
+      rect(ctx, cx - 6, feetY - 7, 12, 2, C.capeShade);
+
+      // 팔
+      rect(ctx, cx - 7, feetY - 13, 2, 6, C.tunicShade);
+      rect(ctx, cx + 5, feetY - 13, 2, 6, C.tunicShade);
+
+      // 머리 (뒤통수 + 머리카락 전체)
+      ctx.fillStyle = C.skin;
+      ctx.beginPath();
+      ctx.arc(Math.round(cx), Math.round(feetY - 18), 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = C.hair;
+      ctx.beginPath();
+      ctx.arc(Math.round(cx), Math.round(feetY - 19), 4, 0, Math.PI * 2);
+      ctx.fill();
+      rect(ctx, cx - 4, feetY - 15, 8, 3, C.hairShade);
+    },
+
+    /* 옆모습 (facingRight=true 면 오른쪽, false 면 왼쪽으로 좌우 반전) */
+    drawSide: function (ctx, cx, feetY, step, facingRight) {
+      var dir = facingRight ? 1 : -1;
+
+      // 망토 (진행 방향 반대쪽으로 흩날림)
+      rect(ctx, cx - dir * 6, feetY - 16, 4, 10, C.capeShade);
+
+      // 뒷다리 / 앞다리
+      rect(ctx, cx - dir * 2 - 1, feetY - 5 - Math.max(0, step), 3, 5, C.tunicShade);
+      rect(ctx, cx + dir * 1 - 1, feetY - 5 + Math.max(0, -step), 3, 5, C.tunicShade);
+
+      // 몸통
+      rect(ctx, cx - 4, feetY - 14, 8, 10, C.tunic);
+      rect(ctx, cx - 4, feetY - 6, 8, 2, C.tunicShade);
+
+      // 여행 가방 (등 쪽)
+      ctx.fillStyle = C.satchel;
+      ctx.beginPath();
+      ctx.arc(Math.round(cx - dir * 4), Math.round(feetY - 10), 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 앞팔 + 검(허리 소지)
+      rect(ctx, cx + dir * 3, feetY - 13, 2, 6, C.tunic);
+      rect(ctx, cx + dir * 4, feetY - 10, 2, 5, C.swordShade);
+      rect(ctx, cx + dir * 3, feetY - 11, 3, 2, C.hilt);
+
+      // 머리
+      ctx.fillStyle = C.skin;
+      ctx.beginPath();
+      ctx.arc(Math.round(cx), Math.round(feetY - 18), 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 앞머리 (진행 방향 쪽으로 쏠린 헤어스타일)
+      rect(ctx, cx - 4, feetY - 22, 8, 3, C.hair);
+      rect(ctx, cx + dir * 3, feetY - 21, 2, 4, C.hair);
+
+      // 눈 (진행 방향 쪽에 1개만 — 옆얼굴)
+      rect(ctx, cx + dir * 2, feetY - 18, 1, 1, C.outline);
+    }
+  };
+
+  MG.Player = Player;
+})(window);
+
+/* ---- js/enemy.js ---- */
+/* ==========================================================================
+   enemy.js — 모슬링(MOSSLING) 행동
+   PHASE 6 에서 구현
+   ========================================================================== */
+(function (global) {
+  'use strict';
+  var MG = global.MG = global.MG || {};
+
+  MG.Enemy = {
+    // TODO: PHASE 6 에서 구현
+  };
+})(window);
+
+/* ---- js/companion.js ---- */
+/* ==========================================================================
+   companion.js — 모스키(MOSKI) 영입 / 추종 / 덩굴 다리 능력
+   PHASE 9, 10 에서 구현
+   ========================================================================== */
+(function (global) {
+  'use strict';
+  var MG = global.MG = global.MG || {};
+
+  MG.Companion = {
+    // TODO: PHASE 9, 10 에서 구현
+  };
+})(window);
+
+/* ---- js/feedback.js ---- */
+/* ==========================================================================
+   feedback.js — 피드백 폼 / LocalStorage / JSON 내보내기
+   PHASE 12 에서 구현
+   ========================================================================== */
+(function (global) {
+  'use strict';
+  var MG = global.MG = global.MG || {};
+
+  MG.Feedback = {
+    // TODO: PHASE 12 에서 구현
+  };
+})(window);
+
+/* ---- js/ui.js ---- */
+/* ==========================================================================
+   ui.js — HUD / 오버레이 / 상호작용 프롬프트
+   PHASE 1 범위:
+     - 타이틀 오버레이 표시 및 "모험 시작" 버튼
+     - 세로(portrait) 방향 경고 오버레이
+     - 화면 크기 변화 훅
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  var UI = {
+    el: {},
+    isPortrait: false,
+
+    init: function () {
+      this.el.title = document.getElementById('overlay-title');
+      this.el.startBtn = document.getElementById('btn-start');
+      this.el.orientation = document.getElementById('overlay-orientation');
+      this.el.version = document.getElementById('hud-version');
+
+      if (this.el.version && MG.Game) {
+        this.el.version.textContent = 'v' + MG.Game.VERSION;
+      }
+
+      var self = this;
+
+      if (this.el.startBtn) {
+        // click 하나만 사용 (터치에서도 안정적으로 동작하며 중복 발화가 없다)
+        this.el.startBtn.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
+          if (MG.Game) MG.Game.startAdventure();
+        });
+      }
+
+      // 방향 감지: matchMedia + resize 양쪽을 모두 사용해 기기별 차이를 흡수
+      this._checkOrientation = function () { self.updateOrientation(); };
+      global.addEventListener('resize', this._checkOrientation);
+      global.addEventListener('orientationchange', function () {
+        // iOS는 orientationchange 직후 크기 갱신이 늦는 경우가 있어 한 프레임 늦춘다
+        global.setTimeout(self._checkOrientation, 120);
+        global.setTimeout(self._checkOrientation, 400);
+      });
+      if (global.matchMedia) {
+        var mq = global.matchMedia('(orientation: portrait)');
+        if (mq.addEventListener) mq.addEventListener('change', this._checkOrientation);
+        else if (mq.addListener) mq.addListener(this._checkOrientation);
+      }
+
+      this.updateOrientation();
+    },
+
+    /* 세로로 들면 경고를 띄우고 게임을 일시정지한다 */
+    updateOrientation: function () {
+      var portrait = global.innerHeight > global.innerWidth;
+      this.isPortrait = portrait;
+
+      if (this.el.orientation) this.el.orientation.hidden = !portrait;
+      document.body.classList.toggle('mg-portrait', portrait);
+
+      // 세로일 때는 게임을 멈춘다 (경고 오버레이가 화면을 덮는다)
+      if (MG.Game) MG.Game.paused = portrait;
+    },
+
+    showTitle: function () {
+      if (this.el.title) this.el.title.hidden = false;
+    },
+
+    hideTitle: function () {
+      if (this.el.title) this.el.title.hidden = true;
+    },
+
+    /* game.js 의 resize() 에서 호출 — 화면 픽셀 크기 전달.
+       ResizeObserver 경유이므로 resize 이벤트가 오지 않는 환경에서도 방향이 동기화된다.
+       (주의: 여기서 Game.resize() 를 다시 호출하면 무한 루프가 된다) */
+    onResize: function (/* w, h */) {
+      this.updateOrientation();
+      // PHASE 3 이후: 조이스틱 / 버튼 배치 재계산이 여기에 들어간다.
+    }
+  };
+
+  MG.UI = UI;
+})(window);
+
+/* ---- js/game.js ---- */
+/* ==========================================================================
+   game.js — 게임 루프 / 전체 게임 상태 / 캔버스 반응형 스케일
+   PHASE 1 범위:
+     - 내부 해상도 480x270 (16:9) 캔버스 설정
+     - 화면비를 유지하는 반응형 레터박스 스케일
+     - 상태 머신(BOOT / TITLE / PLAY)의 뼈대
+     - 델타타임 기반 메인 루프
+     - PHASE 4 이전 임시 배경 렌더
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  var INTERNAL_W = 480;   // 내부 해상도 (16:9)
+  var INTERNAL_H = 270;
+  var MAX_DT = 0.05;      // 탭 전환 후 큰 점프 방지 (초)
+
+  var Game = {
+    VERSION: '0.1.0',
+    WIDTH: INTERNAL_W,
+    HEIGHT: INTERNAL_H,
+
+    canvas: null,
+    ctx: null,
+    stage: null,
+
+    state: 'BOOT',        // BOOT | TITLE | PLAY
+    running: false,
+    paused: false,        // 세로 방향 경고 등으로 인한 일시정지
+    time: 0,              // 누적 경과 시간(초)
+    frame: 0,
+    _lastTs: 0,
+    _rafId: 0,
+
+    /* ---------------------------------------------------------------- init */
+    init: function () {
+      this.canvas = document.getElementById('game-canvas');
+      if (!this.canvas) {
+        console.error('[MG] game-canvas 를 찾을 수 없습니다.');
+        return false;
+      }
+      this.stage = document.getElementById('stage');
+      this.root = document.getElementById('game-root');
+      this.ctx = this.canvas.getContext('2d', { alpha: false });
+
+      this.canvas.width = INTERNAL_W;
+      this.canvas.height = INTERNAL_H;
+      this.ctx.imageSmoothingEnabled = false;
+
+      // 화면 크기 / 방향 변화 대응
+      var self = this;
+      this._onResize = function () { self.resize(); };
+      global.addEventListener('resize', this._onResize);
+      global.addEventListener('orientationchange', this._onResize);
+      if (global.visualViewport) {
+        global.visualViewport.addEventListener('resize', this._onResize);
+      }
+      // 컨테이너 크기가 늦게 확정되는 환경(임베드 뷰 등)까지 확실히 따라간다
+      if (global.ResizeObserver && this.root) {
+        this._ro = new global.ResizeObserver(this._onResize);
+        this._ro.observe(this.root);
+      }
+
+      // 안전망: 일부 모바일 브라우저는 주소창 접힘/회전 시 resize 이벤트를 누락한다.
+      this._pollId = global.setInterval(function () {
+        var v = self.viewportSize();
+        if (v.w > 0 && v.h > 0 && (v.w !== self._lastVW || v.h !== self._lastVH)) self.resize();
+      }, 500);
+
+      this.resize();
+      this.state = 'TITLE';
+      this.start();
+      return true;
+    },
+
+    /* 현재 사용 가능한 화면 크기.
+       모바일 브라우저의 주소창/키보드 변화는 visualViewport 가 더 정확하다. */
+    viewportSize: function () {
+      var w = (this.root && this.root.clientWidth) || global.innerWidth || 0;
+      var h = (this.root && this.root.clientHeight) || global.innerHeight || 0;
+      var vvp = global.visualViewport;
+      if (vvp && vvp.width > 0 && vvp.height > 0) {
+        w = Math.min(w, vvp.width);
+        h = Math.min(h, vvp.height);
+      }
+      return { w: w, h: h };
+    },
+
+    /* -------------------------------------------------------------- resize
+       16:9 비율을 유지하면서 뷰포트 안에 최대 크기로 맞춘다.
+       남는 영역은 레터박스(배경색)로 남는다. */
+    resize: function () {
+      if (!this.stage) return;
+
+      var v = this.viewportSize();
+      var vw = v.w, vh = v.h;
+
+      // 레이아웃이 아직 확정되지 않았으면(크기 0) 다음 프레임에 다시 시도
+      if (vw <= 0 || vh <= 0) {
+        var self0 = this;
+        global.requestAnimationFrame(function () { self0.resize(); });
+        return;
+      }
+
+      var ratio = INTERNAL_W / INTERNAL_H;
+      var w = vw;
+      var h = Math.round(w / ratio);
+      if (h > vh) {
+        h = vh;
+        w = Math.round(h * ratio);
+      }
+
+      this.stage.style.width = w + 'px';
+      this.stage.style.height = h + 'px';
+      this._lastVW = vw;
+      this._lastVH = vh;
+
+      this.scale = w / INTERNAL_W;   // 화면 픽셀 : 내부 픽셀 비율 (터치 좌표 변환용)
+
+      if (MG.UI && MG.UI.onResize) MG.UI.onResize(w, h);
+    },
+
+    /* --------------------------------------------------------------- 루프 */
+    start: function () {
+      if (this.running) return;
+      this.running = true;
+      this._lastTs = 0;
+      var self = this;
+      this._step = function (ts) {
+        self._rafId = global.requestAnimationFrame(self._step);
+        if (!self._lastTs) self._lastTs = ts;
+        var dt = (ts - self._lastTs) / 1000;
+        self._lastTs = ts;
+        if (dt > MAX_DT) dt = MAX_DT;
+
+        if (!self.paused) {
+          self.time += dt;
+          self.frame++;
+          self.update(dt);
+        }
+        self.render();
+      };
+      this._rafId = global.requestAnimationFrame(this._step);
+    },
+
+    stop: function () {
+      this.running = false;
+      if (this._rafId) global.cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+    },
+
+    /* 타이틀 화면에서 "모험 시작"을 눌렀을 때 */
+    startAdventure: function () {
+      this.state = 'PLAY';
+      if (MG.UI && MG.UI.hideTitle) MG.UI.hideTitle();
+    },
+
+    /* 카메라 — 맵이 화면보다 크므로 플레이어를 따라가되 맵 밖은 보여주지 않는다 */
+    camera: { x: 0, y: 0, w: INTERNAL_W, h: INTERNAL_H },
+
+    updateCamera: function () {
+      var cam = this.camera;
+      cam.w = INTERNAL_W;
+      cam.h = INTERNAL_H;
+
+      if (!MG.Player || !MG.Map) return;
+
+      cam.x = Math.round(MG.Player.x - INTERNAL_W / 2);
+      cam.y = Math.round(MG.Player.y - INTERNAL_H / 2);
+
+      var maxX = MG.Map.WIDTH - INTERNAL_W;
+      var maxY = MG.Map.HEIGHT - INTERNAL_H;
+      if (cam.x < 0) cam.x = 0;
+      if (cam.y < 0) cam.y = 0;
+      if (cam.x > maxX) cam.x = maxX;
+      if (cam.y > maxY) cam.y = maxY;
+    },
+
+    /* -------------------------------------------------------------- update */
+    update: function (dt) {
+      // PHASE 5 이후: 적 / 동료 / 전투 갱신이 여기에 들어간다.
+      if (MG.Input && MG.Input.update) MG.Input.update(dt);
+      if (MG.Player && MG.Player.update) MG.Player.update(dt);
+      this.updateCamera();
+    },
+
+    /* -------------------------------------------------------------- render */
+    render: function () {
+      var ctx = this.ctx;
+      if (!ctx) return;
+
+      if (!MG.Map || !MG.Map.ground) {
+        // 맵이 준비되지 않았을 때의 안전한 대체 화면
+        this.drawPlaceholderScene(ctx);
+        if (MG.Player && MG.Player.render) MG.Player.render(ctx);
+        this.drawVignette(ctx);
+        return;
+      }
+
+      var cam = this.camera;
+      var t = this.time;
+
+      ctx.save();
+      ctx.translate(-cam.x, -cam.y);
+
+      MG.Map.renderGround(ctx);
+      MG.Map.renderWater(ctx, cam, t);
+
+      // 나무/바위/플레이어를 발 높이(y) 순으로 그려 앞뒤 관계를 만든다
+      var props = MG.Map.collectProps([], cam);
+      if (MG.Player) {
+        props.push({ y: MG.Player.y, kind: 'player' });
+      }
+      props.sort(function (a, b) { return a.y - b.y; });
+
+      for (var i = 0; i < props.length; i++) {
+        if (props[i].kind === 'player') {
+          if (MG.Player.render) MG.Player.render(ctx);
+        } else {
+          MG.Map.renderProp(ctx, props[i]);
+        }
+      }
+
+      MG.Map.renderFireflies(ctx, cam, t);
+
+      ctx.restore();
+
+      this.drawVignette(ctx);
+    },
+
+    /* PHASE 4에서 실제 숲 맵(map.js)으로 교체될 임시 분위기 배경.
+       캔버스 렌더링/스케일 검증용이며 게임 로직은 포함하지 않는다. */
+    drawPlaceholderScene: function (ctx) {
+      var W = INTERNAL_W, H = INTERNAL_H, t = this.time;
+
+      // 밤 숲 바닥 그라데이션
+      var sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0.0, '#132a24');
+      sky.addColorStop(0.45, '#1b3a2a');
+      sky.addColorStop(1.0, '#25492f');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, H);
+
+      // 달빛 웅덩이
+      var moon = ctx.createRadialGradient(W * 0.5, H * 0.36, 6, W * 0.5, H * 0.36, H * 0.75);
+      moon.addColorStop(0, 'rgba(190, 220, 255, 0.20)');
+      moon.addColorStop(1, 'rgba(190, 220, 255, 0)');
+      ctx.fillStyle = moon;
+      ctx.fillRect(0, 0, W, H);
+
+      // 바닥 풀 결(가로 스트로크) — 정적인 패턴
+      ctx.fillStyle = 'rgba(20, 60, 38, 0.35)';
+      for (var y = 0; y < H; y += 6) {
+        var off = ((y * 37) % 11) - 5;
+        ctx.fillRect(off, y, W, 1);
+      }
+
+      // 떠다니는 숲의 빛(반딧불) — 애니메이션 동작 확인용
+      for (var i = 0; i < 14; i++) {
+        var seed = i * 12.9898;
+        var fx = (Math.sin(seed) * 0.5 + 0.5) * W;
+        var fy = (Math.cos(seed * 1.7) * 0.5 + 0.5) * H;
+        var drift = Math.sin(t * 0.6 + i) * 9;
+        var bob = Math.cos(t * 0.9 + i * 1.3) * 6;
+        var glow = 0.35 + 0.35 * Math.sin(t * 2.2 + i);
+        ctx.fillStyle = 'rgba(206, 244, 168, ' + glow.toFixed(3) + ')';
+        ctx.fillRect(Math.round(fx + drift), Math.round(fy + bob), 2, 2);
+      }
+    },
+
+    /* 화면 가장자리 비네트 — 배경/플레이어 위에 항상 마지막으로 덮는다 */
+    drawVignette: function (ctx) {
+      var W = INTERNAL_W, H = INTERNAL_H;
+      var vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, W, H);
+    }
+  };
+
+  MG.Game = Game;
+})(window);
+
+/* ---- js/main.js ---- */
+/* ==========================================================================
+   main.js — 애플리케이션 진입점
+   각 시스템을 정해진 순서로 초기화한다.
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var MG = global.MG = global.MG || {};
+
+  function boot() {
+    try {
+      if (MG.Audio && MG.Audio.init) MG.Audio.init();
+      if (MG.Input && MG.Input.init) MG.Input.init();
+
+      if (!MG.Game.init()) return;      // 캔버스 / 루프 / 스케일
+      if (MG.Map && MG.Map.init) MG.Map.init();       // 지형 / 충돌 (Player 보다 먼저)
+      if (MG.Player && MG.Player.init) MG.Player.init();
+      MG.UI.init();                     // 오버레이 / 방향 경고 (Game 이후에 초기화)
+
+      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 4');
+    } catch (err) {
+      console.error('[MG] 초기화 실패:', err);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})(window);
+
+</script>
+</body>
+</html>
