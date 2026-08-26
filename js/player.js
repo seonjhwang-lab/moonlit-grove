@@ -56,6 +56,7 @@
     attackFacing: 'down',   // 공격이 시작된 순간의 facing 에 고정
     attackT: 0,             // 현재 스윙 경과 시간(초)
     cooldownT: 0,           // 다음 공격까지 남은 대기 시간(초)
+    attackId: 0,            // PHASE 6: 스윙마다 1씩 증가 — 모슬링의 중복 피격 방지용 식별자
 
     FOOT_W: FOOT_W,
     FOOT_H: FOOT_H,
@@ -71,6 +72,7 @@
       this.attackFacing = 'down';
       this.attackT = 0;
       this.cooldownT = 0;
+      this.attackId = 0;
     },
 
     update: function (dt) {

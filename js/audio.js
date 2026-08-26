@@ -1,12 +1,12 @@
 /* ==========================================================================
    audio.js — 사운드 관리 (합성 효과음)
-   PHASE 5 범위: 검 휘두르는 소리 하나만 최소 구현.
+   PHASE 5 범위: 검 휘두르는 소리.
+   PHASE 6 범위: 모슬링 피격 / 처치 소리.
      - 브라우저 자동재생 정책 때문에 AudioContext 는 사용자 제스처 이후에만
        만들 수 있다 (unlock() 은 ui.js 의 "모험 시작" 클릭에서 이미 호출된다).
      - 오디오 실패가 게임 진행을 막아서는 안 된다 — 모든 단계를 try/catch 로
        감싸고, 실패 시 조용히 무음으로 넘어간다.
-   나머지 효과음(피격/처치/영입/다리/상자 등)은 해당 기능이 생기는 Phase에서
-   같은 패턴으로 추가한다.
+   나머지 효과음(영입/다리/상자 등)은 해당 기능이 생기는 Phase에서 같은 패턴으로 추가한다.
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -71,6 +71,61 @@
         src.stop(now + 0.2);
       } catch (e) {
         // 무음으로 넘어간다 — 오디오 실패가 게임플레이를 막지 않는다
+      }
+    },
+
+    /* 모슬링 피격 — 짧고 높은 "톡" 소리. 오실레이터 피치를 빠르게 떨어뜨려
+       타격감을 준다 (검 소리와 겹쳐도 구분되도록 노이즈 대신 톤을 사용). */
+    playEnemyHit: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        var osc = ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.08);
+
+        var gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.1);
+      } catch (e) {
+        // 무음으로 넘어간다
+      }
+    },
+
+    /* 모슬링 처치 — 노이즈가 낮은 쪽으로 흩어지며 잦아드는 "풋" 소리.
+       모스(이끼) 생명체가 흩어져 사라지는 이미지에 맞춘 절차적 효과음. */
+    playEnemyDefeat: function () {
+      if (!this.ctx || !this._noiseBuffer) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        var src = ctx.createBufferSource();
+        src.buffer = this._noiseBuffer;
+
+        var filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 0.7;
+        filter.frequency.setValueAtTime(1800, now);
+        filter.frequency.exponentialRampToValueAtTime(220, now + 0.26);
+
+        var gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.35, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+        src.connect(filter).connect(gain).connect(ctx.destination);
+        src.start(now);
+        src.stop(now + 0.3);
+      } catch (e) {
+        // 무음으로 넘어간다
       }
     }
   };

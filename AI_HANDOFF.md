@@ -8,13 +8,43 @@ Project:
 
 Current Version:
 
-v0.1.2
+v0.1.3
 
 Current Phase:
 
-Phase 5 — Real-Time Sword Combat — **COMPLETE** (implemented and verified by Claude Code)
+Phase 6 — Mossling Enemy — **COMPLETE** (implemented and verified by Claude Code)
 
-Implemented:
+Implemented (Phase 6):
+
+* Mossling enemy (`js/enemy.js`, was an empty stub)
+* exactly 3 Mosslings, placed at (420,690) near the start path, (700,400) mid-forest
+  clearing, (300,235) the north clearing (same spot reserved for Moski in Phase 9 —
+  intentional, matches the design doc's "defeat a nearby Mossling" beat before the
+  Moski discovery event)
+* state machine: IDLE ↔ WANDER (leashed to home, ~46 units) → CHASE (on player within
+  135 units) → WANDER (hysteresis: gives up beyond 175 units, or if pulled >260 units
+  from home) ; HIT (knockback) and DEAD (fade+shrink, then removed) interrupt any state
+* sword integration consumes the existing `MG.Combat.getAttackHitbox()` unchanged —
+  enemy.js only added a `player.attackId` counter (bumped once per swing in
+  `combat.js:startAttack`) so each Mossling can remember "already hit by swing #N" and
+  never take more than 1 HP per swing, verified for real (7-8 active-window frames,
+  exactly 1 HP lost)
+* HP 3, 1 damage/hit, knockback ~30 world units over 0.14s (via the existing
+  `MG.Collision.moveAndCollide`, so it stops naturally against trees/rocks), hit flash,
+  tiny particle burst on hit (3) and death (6), death fade+shrink over 0.35s then spliced
+  out of the array
+* Mosslings collide with trees/rocks/water using the exact same
+  `MG.Collision.moveAndCollide` player already uses — no second physics system
+* rendered through the same world-space camera transform and y-sorted alongside
+  trees/player in `game.js`'s existing props loop (`MG.Enemy.collect`/`renderOne`)
+* `DEBUG_ENEMY` (const, default `false`, top of `enemy.js`) — independent of
+  `DEBUG_COMBAT`, which is untouched
+* `playEnemyHit()` / `playEnemyDefeat()` added to `audio.js` (same try/catch-safe
+  procedural pattern as the Phase 5 sword sound)
+* Player has no HP/damage/knockback — Mosslings never affect the player (not
+  implemented, per scope)
+
+Previously implemented (Phase 5):
 
 * sword attack (SPACE on desktop, existing bottom-right button on mobile)
 * directional attack (locked to facing at the moment the swing starts)
@@ -28,16 +58,17 @@ Implemented:
 
 Not implemented (by design — later phases):
 
-* enemies / Mossling
-* enemy HP / damage / knockback / defeat
-* player HP / damage / invincibility
+* player HP / damage / invincibility (Mosslings do not and cannot hurt the player yet)
 * companion / Moski
 * treasure
+* Vine Bridge
 * boss
+* multiple enemy types
+* enemy attacks, XP, loot, enemy health bars
 
 Next:
 
-Phase 6 — Mossling enemy
+Phase 7 — Player HP / damage / knockback / invincibility / game over
 
 ---
 
@@ -315,17 +346,17 @@ Must change:
 
 # DO NOT IMPLEMENT YET
 
-Phase 5 (sword attack itself) is done — see COMPLETED: PHASE 5 above.
+Phase 5 (sword attack) and Phase 6 (Mossling enemy) are both done — see
+COMPLETED: PHASE 5 / COMPLETED: PHASE 6 above.
 
 Do NOT implement:
 
-* Mossling / enemy AI
-* enemy HP / damage / knockback / defeat
 * player HP / damage / invincibility
 * companion / Moski
 * treasure
 * quests
 * bosses
+* multiple enemy types
 * multiple maps
 
 Those belong to later phases.
@@ -334,15 +365,15 @@ Those belong to later phases.
 
 # CURRENT NEXT PHASE
 
-After Phase 5 (sword combat) is stable:
+After Phase 6 (Mossling enemy) is stable:
 
-## Phase 6
+## Phase 7
 
-First enemy: Mossling
+Player HP / damage / knockback / invincibility / game over
 
-Expected systems:
-
-* sword swing
+Expected systems (superseded notes from the original Phase 6 planning — the
+enemy-side half of this list, sword swing/hitbox/enemy HP/knockback/defeat,
+is now done; what's left is the player-side half):
 * directional hitbox
 * enemy HP
 * damage
@@ -414,6 +445,19 @@ direction, world-space `MG.Combat.getAttackHitbox()` ready for Phase 6,
 procedural swing sound. No enemies, no damage, no HP — attack-only. Map,
 collision, camera, and portrait layout untouched. Completed by Claude Code.
 
+## v0.1.3
+
+Phase 6 — Mossling enemy. Exactly 3 Mosslings (`js/enemy.js`, was an empty
+stub), IDLE/WANDER/CHASE/HIT/DEAD state machine, detection 135 / leave 175
+world units (hysteresis), chase speed 42 (half player speed), HP 3 / 1 dmg
+per hit consuming the existing `MG.Combat.getAttackHitbox()` unchanged
+(only addition: `player.attackId` counter in `combat.js` so one swing can't
+multi-hit one Mossling), knockback ~30 units / 0.14s via the existing
+`MG.Collision.moveAndCollide`, death fade+shrink 0.35s then removed. Player
+has no HP — Mosslings cannot damage the player (out of scope, Phase 7).
+Portrait layout, camera, map, collision, sword combat all unchanged in
+behavior. Completed by Claude Code.
+
 ---
 
 # HANDOFF STATUS
@@ -424,10 +468,10 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 5 (real-time sword combat) v0.1.2 — done, stable. Not yet committed to
-git (attack-only implementation, verified locally; a commit was intentionally
-not made — see git status/diff in the Phase 5 completion report). Next task
-is Phase 6 (Mossling enemy), not started.
+Phase 6 (Mossling enemy) v0.1.3 — done, stable. Not yet committed to git
+(verified locally; a commit was intentionally not made — see git status/diff
+in the Phase 6 completion report). Next task is Phase 7 (player HP/damage/
+knockback/invincibility/game over), not started.
 
 Next owner:
 

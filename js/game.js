@@ -22,7 +22,7 @@
   var DEBUG_MOBILE_LAYOUT = false;
 
   var Game = {
-    VERSION: '0.1.2',
+    VERSION: '0.1.3',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -187,10 +187,11 @@
 
     /* -------------------------------------------------------------- update */
     update: function (dt) {
-      // PHASE 6 이후: 적 / 동료 갱신이 여기에 들어간다. 공격 상태 자체는
+      // PHASE 7 이후: 동료 갱신이 여기에 들어간다. 공격 상태 자체는
       // player.js 의 update() 안에서 combat.js 를 통해 함께 진행된다.
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
+      if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
     },
@@ -236,8 +237,9 @@
       MG.Map.renderGround(ctx);
       MG.Map.renderWater(ctx, cam, t);
 
-      // 나무/바위/플레이어를 발 높이(y) 순으로 그려 앞뒤 관계를 만든다
+      // 나무/바위/모슬링/플레이어를 발 높이(y) 순으로 그려 앞뒤 관계를 만든다
       var props = MG.Map.collectProps([], cam);
+      if (MG.Enemy && MG.Enemy.collect) MG.Enemy.collect(props, cam);
       if (MG.Player) {
         props.push({ y: MG.Player.y, kind: 'player' });
       }
@@ -246,10 +248,14 @@
       for (var i = 0; i < props.length; i++) {
         if (props[i].kind === 'player') {
           if (MG.Player.render) MG.Player.render(ctx);
+        } else if (props[i].kind === 'enemy') {
+          MG.Enemy.renderOne(ctx, props[i].obj);
         } else {
           MG.Map.renderProp(ctx, props[i]);
         }
       }
+
+      if (MG.Enemy && MG.Enemy.renderParticles) MG.Enemy.renderParticles(ctx);
 
       MG.Map.renderFireflies(ctx, cam, t);
 

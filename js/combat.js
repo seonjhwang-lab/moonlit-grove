@@ -4,10 +4,15 @@
      - 공격 지속시간 / 쿨다운을 델타타임으로 진행 (프레임수 의존 없음)
      - 방향은 공격 시작 순간의 facing 에 고정된다 (스윙 도중 방향 전환 없음)
      - 히트박스는 플레이어의 "월드" 좌표 기준으로 계산한다 (화면 좌표 아님) —
-       PHASE 6 에서 모슬링과의 충돌 판정이 그대로 재사용할 수 있게 하기 위함.
-     - 실제 데미지/적 판정은 아직 없다 (모슬링이 없으므로 PHASE 6의 몫).
-   상태 자체(attacking/attackFacing/attackT/cooldownT)는 player.js 가 들고 있고,
-   이 파일은 그 상태를 "어떻게 진행시키고 어떻게 히트박스로 변환할지"만 담당한다.
+       PHASE 6 에서 모슬링과의 충돌 판정이 그대로 재사용한다.
+   PHASE 6 범위:
+     - player.attackId 를 스윙마다 1씩 올린다. enemy.js 는 모슬링별로
+       "마지막으로 맞은 attackId" 를 기억해두고 비교하는 방식으로 같은 스윙이
+       한 모슬링을 여러 프레임에 걸쳐 중복으로 때리지 못하게 막는다
+       (프레임 타이밍이 아니라 스윙 단위 식별자로 판정하기 위함).
+   상태 자체(attacking/attackFacing/attackT/cooldownT/attackId)는 player.js 가
+   들고 있고, 이 파일은 그 상태를 "어떻게 진행시키고 어떻게 히트박스로 변환할지"만
+   담당한다.
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -60,6 +65,7 @@
       player.attacking = true;
       player.attackFacing = player.facing;
       player.attackT = 0;
+      player.attackId = (player.attackId || 0) + 1;
       if (MG.Audio && MG.Audio.playSwordSwing) MG.Audio.playSwordSwing();
     },
 
