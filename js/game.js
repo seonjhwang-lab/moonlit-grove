@@ -21,8 +21,14 @@
   // 개발용 디버그 오버레이. true 로 바꾸면 화면 크기/카메라/입력 상태를 표시한다.
   var DEBUG_MOBILE_LAYOUT = false;
 
+  // PHASE 6.1: 타격이 성공했을 때 아주 짧게 게임 진행을 슬로우모션으로 늦춰
+  // "탁 걸리는" 손맛을 준다. 완전히 멈추면(dt=0) 애니메이션/타이머가 이상하게
+  // 얼어붙을 수 있어 0에 아주 가깝지만 0은 아닌 배율을 쓴다 — 그래서 이동/공격
+  // 쿨다운 등 기존 타이밍 코드를 손대지 않고도 "거의 정지"처럼 보인다.
+  var HITSTOP_SCALE = 0.06;
+
   var Game = {
-    VERSION: '0.1.3',
+    VERSION: '0.1.5',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -36,6 +42,7 @@
     paused: false,        // 세로 방향 경고 등으로 인한 일시정지
     time: 0,              // 누적 경과 시간(초)
     frame: 0,
+    hitStopT: 0,           // PHASE 6.1: 남은 히트스탑 시간(실시간 초)
     _lastTs: 0,
     _rafId: 0,
 
@@ -145,7 +152,17 @@
         if (!self.paused) {
           self.time += dt;
           self.frame++;
-          self.update(dt);
+
+          // 히트스탑: 남은 시간은 "실시간"으로 줄어들지만(다음 프레임엔 반드시
+          // 풀린다), 이번 프레임에 게임플레이로 넘기는 dt 는 크게 축소한다.
+          // 입력 이벤트(pointerdown 등)는 루프와 무관하게 계속 들어오므로
+          // 터치/키보드 반응성에는 영향이 없다.
+          var gameplayDt = dt;
+          if (self.hitStopT > 0) {
+            self.hitStopT -= dt;
+            gameplayDt = dt * HITSTOP_SCALE;
+          }
+          self.update(gameplayDt);
         }
         self.render();
       };
@@ -156,6 +173,13 @@
       this.running = false;
       if (this._rafId) global.cancelAnimationFrame(this._rafId);
       this._rafId = 0;
+    },
+
+    /* PHASE 6.1: 타격 성공 시 enemy.js 가 호출한다. 아주 짧은 지속시간을 기대한다
+       (권장 0.03~0.06초). 같은 프레임에 여러 히트가 겹쳐도 시간이 계속 늘어나지
+       않도록(작업 중첩 방지) 더 긴 쪽으로만 갱신한다. */
+    hitStop: function (duration) {
+      this.hitStopT = Math.max(this.hitStopT, duration);
     },
 
     /* 타이틀 화면에서 "모험 시작"을 눌렀을 때 */

@@ -75,13 +75,31 @@
     },
 
     /* 모슬링 피격 — 짧고 높은 "톡" 소리. 오실레이터 피치를 빠르게 떨어뜨려
-       타격감을 준다 (검 소리와 겹쳐도 구분되도록 노이즈 대신 톤을 사용). */
+       타격감을 준다 (검 소리와 겹쳐도 구분되도록 노이즈 대신 톤을 사용).
+       PHASE 6.1: "탁/착" 하고 걸리는 맛을 더하려고, 톤 앞에 아주 짧은 노이즈
+       클릭을 한 겹 더 얹었다 — 타악기의 어택 성분처럼 순간적인 "딱" 임팩트를 준다. */
     playEnemyHit: function () {
       if (!this.ctx) return;
       try {
         var ctx = this.ctx;
         var now = ctx.currentTime;
 
+        // 클릭 레이어 (아주 짧은 노이즈, 어택 성분)
+        if (this._noiseBuffer) {
+          var click = ctx.createBufferSource();
+          click.buffer = this._noiseBuffer;
+          var clickFilter = ctx.createBiquadFilter();
+          clickFilter.type = 'highpass';
+          clickFilter.frequency.value = 1200;
+          var clickGain = ctx.createGain();
+          clickGain.gain.setValueAtTime(0.28, now);
+          clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+          click.connect(clickFilter).connect(clickGain).connect(ctx.destination);
+          click.start(now);
+          click.stop(now + 0.03);
+        }
+
+        // 톤 레이어 (기존 — 피치가 빠르게 떨어지는 짧은 사각파)
         var osc = ctx.createOscillator();
         osc.type = 'square';
         osc.frequency.setValueAtTime(520, now);
@@ -124,6 +142,32 @@
         src.connect(filter).connect(gain).connect(ctx.destination);
         src.start(now);
         src.stop(now + 0.3);
+      } catch (e) {
+        // 무음으로 넘어간다
+      }
+    },
+
+    /* PHASE 6.2: 모슬링 돌진이 플레이어에 닿았을 때 — 검 타격음(사각파, 밝고 높음)
+       이나 처치음(노이즈, 길게 잦아듦)과는 확실히 다른, 둔탁하고 낮은 "퍽" 톤을
+       사인파로 만든다. 데미지가 아니라 "닿았다"는 신호일 뿐이라 자극적이지 않게. */
+    playPlayerContact: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        var osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(85, now + 0.10);
+
+        var gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.26, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.13);
       } catch (e) {
         // 무음으로 넘어간다
       }

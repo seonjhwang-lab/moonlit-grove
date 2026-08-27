@@ -8,19 +8,86 @@ Project:
 
 Current Version:
 
-v0.1.3
+v0.1.5
 
 Current Phase:
 
-Phase 6 — Mossling Enemy — **COMPLETE** (implemented and verified by Claude Code)
+Phase 6.2 — Combat Readability & Threat Feedback — **COMPLETE** (implemented
+and verified by Claude Code, refining 6.1 based on further player feedback)
 
-Implemented (Phase 6):
+Implemented (Phase 6.2):
 
-* Mossling enemy (`js/enemy.js`, was an empty stub)
-* exactly 3 Mosslings, placed at (420,690) near the start path, (700,400) mid-forest
-  clearing, (300,235) the north clearing (same spot reserved for Moski in Phase 9 —
-  intentional, matches the design doc's "defeat a nearby Mossling" beat before the
-  Moski discovery event)
+* **Sword readability, round 2** (feedback: "still hard to understand" after
+  6.1): the reach-fan gradient now brightens toward the *outer edge* instead
+  of the center (a shockwave-style cue for "here's the boundary"), plus a
+  crisp stroked arc traced exactly at the swing's reach — still a curved
+  line following the blade, not a rectangle, so it doesn't read as a debug
+  hitbox. Trail alpha pushed up again (0.18/0.36/0.62/1.0, was 0.12/0.26/0.48/1.0).
+* **Wind-up, made much bolder** (feedback: "difficult to notice"): shrink
+  nearly doubled (0.16→0.30 of body size), added a directional lean toward
+  the player (`facingSign`-based), and a pulsing amber warning ring (`#ffb347`,
+  alpha 0.25–0.60) distinct from the existing eye-flicker — three independent
+  signals (size + lean + color) instead of one. Verified by pixel-diffing the
+  same screen coordinates in windup vs. approach — confirmed both the size
+  change and a genuine warm-color shift, not just a lucky screenshot angle.
+* **Lunge stretch trail**: a faded body-color ghost circle trails behind the
+  lunge direction (same technique as the sword's blade trail) for a "shot
+  forward" read. Timing/distance constants (~0.20s windup, ~0.17s lunge,
+  ~21 units) intentionally unchanged from 6.1 — this pass only touched
+  visibility, not values.
+* **Player contact feedback** (new — was invisible before): when a lunge's
+  hurtbox overlaps the player's new `MG.Player.getHurtbox()`, `enemy.js`
+  calls `MG.Player.onContactHit()`, which pushes the player 5 world units
+  away (existing `MG.Collision.moveAndCollide`), sets an 0.08s red flash
+  overlay, calls the existing `MG.Game.hitStop()` at 0.04s, and plays a new
+  `MG.Audio.playPlayerContact()` (low sine "thud", distinct from both the
+  sword-swing whoosh and the enemy-hit "탁"). **Still no player HP, no
+  damage value, no game over** — purely a "the enemy reached me" signal.
+  Guarded by a per-lunge `e.lungeContactDone` flag (reset only when a new
+  lunge starts), verified to fire exactly once across 20 overlapping frames
+  and never fire during ordinary (non-lunge) chase contact. Movement/attack
+  input confirmed fully responsive on the very next frame after a contact
+  (no stun, no input gating added anywhere in this feature).
+
+Previously implemented (Phase 6.1 — unchanged this pass):
+
+* **Attack readability**: `Player.drawAttackSwing()` (`js/player.js`) now also
+  fills a soft translucent fan from the pivot out to the same 14px reach as
+  `combat.js`'s hitbox, growing as the swing progresses — the player sees
+  roughly how far the sword reaches without a debug rectangle. Blade trail
+  went from 2 ghost steps to 3 (more visible), and the blade itself is drawn
+  the full 14px reach instead of ~9px.
+* **Hit confirmation** (all on `enemy.js:applyHit()`, same successful hit):
+  flash decoupled from knockback into its own `FLASH_DURATION=0.08s` (was
+  tied to the 0.14s knockback before); 4 bright "spark" particles
+  (`type:'spark'`, distinct color from the green death "poof") at the hit
+  point; `MG.Game.hitStop(0.045s)` — new method in `game.js`, implemented as
+  a dt-scale (×0.06) inside the RAF `_step` closure for exactly one brief
+  window, not a hard pause, so touch/keyboard events (which arrive
+  independently of the loop) are never blocked and cooldown timers just tick
+  very slowly rather than freezing; `playEnemyHit()` in `audio.js` got a
+  short noise "click" layered under the existing tone for more of a
+  "탁" transient. Knockback values themselves untouched.
+* **Miss vs hit**: miss already produced zero flash/spark/sound/hitstop by
+  construction (all four only fire from inside `applyHit`, which only runs
+  on a confirmed AABB overlap) — verified directly rather than assumed.
+* **Density**: 3 → 9 Mosslings, distributed 2 near start / 2 along the main
+  path / 3 deeper forest / 2 other open areas, using the same glade/path-
+  corridor-safe placement approach as Phase 6 (all 9 spawned with zero
+  `findClearSpot` nudging needed).
+* **Threat without player damage**: added a windup→lunge sub-phase inside
+  the existing `CHASE` state (`e.chasePhase`: `approach|windup|lunge` — not
+  a new top-level state). Within 55 world units, freezes in place for
+  ~0.20s (readable coil — measured 0.217s due to frame quantization, within
+  the 0.18–0.25s ask) with a fast eye-flicker warning, then locks a
+  direction and dashes ~21 units over ~0.18s (measured 0.183s, within
+  15–20s... i.e. 0.15–0.20s ask), then an 0.8s cooldown before it can
+  wind up again. Still never touches player HP/damage — purely a movement
+  threat.
+
+Previously implemented (Phase 6, unchanged this pass):
+
+* Mossling enemy (`js/enemy.js`, was an empty stub before Phase 6)
 * state machine: IDLE ↔ WANDER (leashed to home, ~46 units) → CHASE (on player within
   135 units) → WANDER (hysteresis: gives up beyond 175 units, or if pulled >260 units
   from home) ; HIT (knockback) and DEAD (fade+shrink, then removed) interrupt any state
@@ -456,7 +523,64 @@ multi-hit one Mossling), knockback ~30 units / 0.14s via the existing
 `MG.Collision.moveAndCollide`, death fade+shrink 0.35s then removed. Player
 has no HP — Mosslings cannot damage the player (out of scope, Phase 7).
 Portrait layout, camera, map, collision, sword combat all unchanged in
-behavior. Completed by Claude Code.
+behavior. Completed by Claude Code. (Later committed to GitHub outside this
+handoff's own tracking — confirmed still-committed baseline as of v0.1.4.)
+
+## v0.1.4
+
+Phase 6.1 — combat feel / hit feedback / enemy density, refining Phase 6 on
+player feedback (not a new numbered phase). Sword reach now has a visible
+fan + longer/more-visible trail. Successful hits get a decoupled 0.08s
+flash, 4 bright spark particles, an 0.045s dt-scaled hit-stop
+(`MG.Game.hitStop()`), and a punchier hit sound — all absent on a miss,
+verified directly. Mosslings 3 → 9, same safe-placement approach as Phase 6.
+Added windup→lunge as a sub-phase of the existing CHASE state (not a new
+state) for threat without player damage — still no player HP. Two bug fixes
+from a Gemini review (CHASE-entry home-leash check, dedicated combat
+hurtbox separate from the movement footRect) from the v0.1.3→v0.1.4 gap are
+already folded into `enemy.js` and this document's Phase 6 section above.
+Portrait layout, camera, map, collision, movement, mobile controls
+unchanged in behavior. Completed by Claude Code.
+
+## v0.1.5
+
+Phase 6.2 — combat readability & threat feedback, refining 6.1 on further
+player feedback (not a new numbered phase; timing/damage values from 6.1
+unchanged). Sword reach fan brightens toward its outer edge + gained a
+traced boundary arc; trail alpha raised again. Wind-up shrink nearly
+doubled and gained a directional lean + pulsing amber ring — pixel-diff
+verified, not just eyeballed. Lunge gained a stretch-trail ghost. New:
+player contact feedback — `MG.Player.getHurtbox()` / `onContactHit()`
+(5-unit knockback, 0.08s red flash, 0.04s hit-stop, distinct
+`playPlayerContact()` sound), gated per-lunge by `e.lungeContactDone` so it
+fires at most once per dash — still zero player HP/damage/game-over.
+Portrait layout, camera, map, collision, sword/enemy timing values, mobile
+controls all unchanged in behavior. Completed by Claude Code.
+
+### v0.1.5 폴리시 — 플레이어/모슬링 겹침 수정
+
+Version number unchanged (still v0.1.5) — this was a same-version bug fix,
+not a new phase. Root cause: `updateChase()`'s `approach` sub-phase had no
+lower bound on closing distance (only exited toward `windup`, never toward
+"stop"), and the `lunge` sub-phase always traveled the full fixed
+`LUNGE_DIST` regardless of how close the player already was — so a
+mossling with its dash on cooldown could walk fully onto the player's
+position, and a lunge could dash straight through/past the player. Fixed
+in `enemy.js` only, with two new constants derived from the existing
+`getHurtbox()` sizes (not arbitrary): `CHASE_STOP_DIST` (=15, approach
+now freezes just outside hurtbox-touch range instead of closing to zero)
+and `LUNGE_CONTACT_DIST` (=9, comfortably inside touch range so the
+existing hurtbox-overlap contact check still fires reliably). The lunge
+step is clamped to stop at `LUNGE_CONTACT_DIST` instead of overshooting,
+and — importantly — once `e.lungeContactDone` is set true, the lunge ends
+immediately on the next frame rather than continuing to close the
+distance the contact knockback just opened up (an early version of this
+fix didn't do that, and the mossling would chase the knocked-back player
+right back into contact range within the same dash — caught via browser
+trace testing, not by the isolated Node unit tests, since those didn't
+simulate `MG.Player.onContactHit()`'s knockback). `LUNGE_DIST`/
+`LUNGE_DURATION`/`WINDUP_DURATION`/`LUNGE_TRIGGER_DIST`/`checkPlayerContact()`
+values and the sword hitbox are all untouched. Completed by Claude Code.
 
 ---
 
@@ -468,10 +592,10 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 6 (Mossling enemy) v0.1.3 — done, stable. Not yet committed to git
-(verified locally; a commit was intentionally not made — see git status/diff
-in the Phase 6 completion report). Next task is Phase 7 (player HP/damage/
-knockback/invincibility/game over), not started.
+Phase 6.2 + overlap-fix polish, v0.1.5 — done, stable. Not yet committed
+to git this pass (verified locally; a commit was intentionally not made —
+see git status/diff in the completion report). Next task is Phase 7
+(player HP/damage/knockback/invincibility/game over), not started.
 
 Next owner:
 

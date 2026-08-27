@@ -23,6 +23,12 @@
   var STEP_FREQ = 9;        // 걷기 사이클 속도
   var IDLE_FREQ = 1.6;      // 정지 시 미세한 흔들림 속도
 
+  // PHASE 6.2: 모슬링 돌진이 플레이어에게 닿았을 때의 피드백 (체력/데미지 없음 —
+  // "적이 나에게 닿았다"만 전달하는 연출용 수치).
+  var CONTACT_FLASH_DURATION = 0.08;   // 초 (권장 0.06~0.10)
+  var CONTACT_KNOCKBACK_DIST = 5;      // 세계 픽셀 (권장 4~6)
+  var CONTACT_HITSTOP = 0.04;          // 초 (권장 0.03~0.05)
+
   // LUKA 고유 팔레트 — 기존 판타지 캐릭터와 겹치지 않는 배색
   var C = {
     skin:        '#e8b98a',
@@ -58,6 +64,8 @@
     cooldownT: 0,           // 다음 공격까지 남은 대기 시간(초)
     attackId: 0,            // PHASE 6: 스윙마다 1씩 증가 — 모슬링의 중복 피격 방지용 식별자
 
+    hitFlashT: 0,            // PHASE 6.2: 모슬링 돌진에 닿았을 때의 짧은 플래시 (체력 아님)
+
     FOOT_W: FOOT_W,
     FOOT_H: FOOT_H,
 
@@ -73,10 +81,45 @@
       this.attackT = 0;
       this.cooldownT = 0;
       this.attackId = 0;
+      this.hitFlashT = 0;
+    },
+
+    /* 전투용 허트박스 — enemy.js 의 getHurtbox() 와 같은 개념(발치 이동 충돌과는
+       별개). 모슬링의 돌진이 "몸에 닿았는지" 판정할 때 사용한다. */
+    getHurtbox: function () {
+      return { x: this.x - 6, y: this.y - 16, w: 12, h: 16 };
+    },
+
+    /* PHASE 6.2: 모슬링 돌진이 닿았을 때 enemy.js 가 호출한다.
+       체력/데미지는 없다 — "적이 닿았다" 를 알리는 순수 연출: 살짝 밀려나고,
+       짧게 붉게 번쩍이고, 아주 잠깐 히트스탑이 걸리고, 소리가 난다.
+       조이스틱/공격 입력은 이 흐름에서 전혀 건드리지 않으므로 즉시 조작 가능하다. */
+    onContactHit: function (fromX, fromY) {
+      var dx = this.x - fromX, dy = this.y - fromY;
+      var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = dx / dist, ny = dy / dist;
+
+      var solids = (MG.Map && MG.Map.solids) || [];
+      if (MG.Collision && solids.length) {
+        var res = MG.Collision.moveAndCollide(
+          this.x, this.y, FOOT_W, FOOT_H,
+          nx * CONTACT_KNOCKBACK_DIST, ny * CONTACT_KNOCKBACK_DIST, solids
+        );
+        this.x = res.x;
+        this.y = res.y;
+      } else {
+        this.x += nx * CONTACT_KNOCKBACK_DIST;
+        this.y += ny * CONTACT_KNOCKBACK_DIST;
+      }
+
+      this.hitFlashT = CONTACT_FLASH_DURATION;
+      if (MG.Game && MG.Game.hitStop) MG.Game.hitStop(CONTACT_HITSTOP);
+      if (MG.Audio && MG.Audio.playPlayerContact) MG.Audio.playPlayerContact();
     },
 
     update: function (dt) {
       this.animT += dt;
+      this.hitFlashT = Math.max(0, this.hitFlashT - dt);
 
       var canMove = MG.Game && MG.Game.state === 'PLAY';
 
@@ -159,6 +202,16 @@
       if (this.attacking && MG.Combat) {
         var progress = this.attackT / MG.Combat.ATTACK_DURATION;
         this.drawAttackSwing(ctx, cx, topY, renderFacing, progress);
+      }
+
+      // PHASE 6.2: 모슬링 접촉 플래시 — 팔레트를 바꾸지 않는 옅은 오버레이라
+      // 잠깐 번쩍이고 사라진다 (체력 시스템이 아니라 순수 연출)
+      if (this.hitFlashT > 0) {
+        var flashA = (this.hitFlashT / CONTACT_FLASH_DURATION) * 0.55;
+        ctx.fillStyle = 'rgba(255, 80, 80, ' + flashA.toFixed(2) + ')';
+        ctx.beginPath();
+        ctx.ellipse(Math.round(cx), Math.round(topY - 11), 8, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
     },
 
@@ -288,10 +341,13 @@
       rect(ctx, cx + dir * 2, feetY - 18, 1, 1, C.outline);
     },
 
-    /* PHASE 5: 검 스윙 오버레이.
+    /* PHASE 5 검 스윙 / PHASE 6.1 가독성 보강.
        정적인 칼이 아니라 호를 그리며 휘두르는 느낌을 주기 위해, 매 프레임
-       현재 진행도(progress 0~1)에서의 칼날 각도 하나와 잔상용 이전 각도
-       두 개를 옅게 겹쳐 그린다 (빠른 스윙일수록 잔상이 뚜렷해 보인다).
+       현재 진행도(progress 0~1)에서의 칼날 각도와 잔상용 이전 각도 여러 개를
+       옅게 겹쳐 그린다. 추가로 스윙이 "지금까지 쓸고 지나간 부채꼴"을 옅게
+       채워, 칼날이 스쳐가는 순간의 궤적뿐 아니라 "대략 이만큼 닿는다"는
+       사거리 자체가 눈에 남도록 한다 (PHASE 6.1: 사거리 가독성 피드백 —
+       DEBUG_COMBAT 의 사각형 판정 표시와는 다른, 항상 켜져 있는 연출용 효과).
        dir 은 combat.js 의 히트박스 방향과 같은 값을 쓴다 (up/down/left/right). */
     drawAttackSwing: function (ctx, cx, feetY, dir, progress) {
       var t = progress < 0 ? 0 : (progress > 1 ? 1 : progress);
@@ -310,25 +366,59 @@
 
       var sweep = (100 * Math.PI) / 180;   // 전체로 휘두르는 각도(호)
       var startAngle = baseAngle - sweep / 2;
+      var reach = 14;   // combat.js 의 REACH 와 시각적으로 맞춘 사거리 (px)
+      var px = Math.round(pivotX), py = Math.round(pivotY);
+
+      // 사거리 가늠용 부채꼴 — 지금까지 스윙이 쓸고 지나간 만큼만 채워서
+      // "칼이 도달하는 범위" 를 그 자체로 보여준다. PHASE 6.2: "그래도 사거리를
+      // 알기 어렵다" 피드백을 받아 두 가지를 더했다 — (1) 가운데보다 바깥쪽
+      // (=사거리 경계)이 더 밝은 그라데이션으로 바꿔 "여기까지 닿는다"는 경계
+      // 자체가 눈에 띄게 했고, (2) 그 경계를 따라 또렷한 호 선을 하나 그었다.
+      // 사각형이 아니라 칼의 궤적을 따르는 곡선이라 디버그 히트박스처럼 보이지 않는다.
+      ctx.save();
+      ctx.translate(px, py);
+
+      var grad = ctx.createRadialGradient(0, 0, 0, 0, 0, reach);
+      grad.addColorStop(0, 'rgba(230, 245, 255, 0.05)');
+      grad.addColorStop(0.65, 'rgba(230, 245, 255, 0.10)');
+      grad.addColorStop(1, 'rgba(235, 248, 255, 0.30)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, reach, startAngle, startAngle + sweep * t);
+      ctx.closePath();
+      ctx.fill();
+
+      // 사거리 경계선 — 스친 구간만큼만 또렷하게
+      ctx.strokeStyle = 'rgba(240, 250, 255, 0.65)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, reach, startAngle, startAngle + sweep * t);
+      ctx.stroke();
+
+      ctx.restore();
 
       function bladeAt(p, alpha) {
         var ang = startAngle + sweep * p;
         ctx.save();
-        ctx.translate(Math.round(pivotX), Math.round(pivotY));
+        ctx.translate(px, py);
         ctx.rotate(ang);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = C.hilt;
         ctx.fillRect(0, -1, 3, 2);
         ctx.fillStyle = C.sword;
-        ctx.fillRect(3, -1, 9, 2);
+        ctx.fillRect(3, -1, reach - 3, 2);
         ctx.fillStyle = C.swordShade;
-        ctx.fillRect(3, 0, 9, 1);
+        ctx.fillRect(3, 0, reach - 3, 1);
         ctx.restore();
       }
 
-      // 잔상 (옅게) → 현재 위치 (또렷하게) 순으로 그려야 잔상이 뒤에 깔린다
-      bladeAt(Math.max(0, t - 0.32), 0.16);
-      bladeAt(Math.max(0, t - 0.16), 0.32);
+      // 잔상(더 많고 더 또렷하게) → 현재 위치 순으로 그려야 잔상이 뒤에 깔린다.
+      // PHASE 6.1/6.2: "블레이드 트레일이 잘 안 보인다" 피드백이 반복돼 알파를
+      // 다시 한 번 끌어올렸다.
+      bladeAt(Math.max(0, t - 0.40), 0.18);
+      bladeAt(Math.max(0, t - 0.26), 0.36);
+      bladeAt(Math.max(0, t - 0.13), 0.62);
       bladeAt(t, 1);
 
       // 스윙 중간(가장 강하게 뻗는 순간) 칼끝에 짧은 섬광 — 타격감용, 적 명중 이펙트 아님
@@ -336,8 +426,8 @@
       if (Math.abs(t - mid) < midWindow) {
         var glintAlpha = 1 - Math.abs(t - mid) / midWindow;
         var ang = startAngle + sweep * t;
-        var tipX = pivotX + Math.cos(ang) * 12;
-        var tipY = pivotY + Math.sin(ang) * 12;
+        var tipX = pivotX + Math.cos(ang) * reach;
+        var tipY = pivotY + Math.sin(ang) * reach;
         ctx.fillStyle = 'rgba(255, 255, 255, ' + (glintAlpha * 0.8).toFixed(2) + ')';
         ctx.fillRect(Math.round(tipX), Math.round(tipY), 1, 1);
       }
