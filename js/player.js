@@ -29,6 +29,27 @@
   var CONTACT_KNOCKBACK_DIST = 5;      // 세계 픽셀 (권장 4~6)
   var CONTACT_HITSTOP = 0.04;          // 초 (권장 0.03~0.05)
 
+  // PHASE 7: 체력 / 생존. 데미지는 접촉당 고정 1, 방어/속성/치명타 없음 — 단순하게 유지.
+  var MAX_HP = 5;
+  var INVULN_DURATION = 1.2;   // 초 — 피격 후 무적 시간 (조작은 전혀 막지 않는다)
+  var BLINK_INTERVAL = 0.1;    // 초 — 무적 중 깜빡임 주기
+  var BLINK_ALPHA_LOW = 0.2;
+  var DEATH_DURATION = 1.5;    // 초 — 사망 연출 지속시간(페이드 + 붕괴)
+  var DEATH_SHRINK = 0.3;      // 사망 진행도 100%일 때 가로 축소 비율
+  var DEATH_COLLAPSE = 0.65;   // 사망 진행도 100%일 때 세로 압축 비율
+
+  // PHASE 7 SOFT ATTACK ASSIST: 검이 실제로 맞춘 순간에만 그 방향으로 facing 을
+  // 보정한다. 조준 보조/락온이 아니라 "방금 맞춘 적을 자연스럽게 바라본다"는
+  // 시각적 마무리일 뿐이다 — 공격을 시작하거나 빗나갔을 때는 절대 개입하지
+  // 않는다. MOBILE COMBAT FEEL TUNING: "0.18초도 거의 안 느껴진다"는 실기기
+  // 피드백을 받아 0.18 → 0.24초로 다시 늘렸다(상한 0.25초 이내). 여전히
+  // 순수하게 "얼마나 오래 붙잡고 있는가"만의 문제다 — 대상 선정 규칙/판정/
+  // 스윙 자체는 이전 패스와 완전히 동일하다. applyAttackAssist() 는 호출될
+  // 때마다 무조건 새로 방향+타이머를 덮어쓰므로(아래 참고), 이 유지시간 안에
+  // 다시 명중하면 이전 보정이 새 보정을 막지 않고 즉시 갱신된다.
+  var ATTACK_ASSIST_HOLD = 0.24;   // 초 — 명중 직후 보정된 facing 을 유지하는 시간 (0.18 → 0.24)
+  var DEBUG_ATTACK_ASSIST = false; // true 로 바꾸면 선택된 대상/보정 방향/타이머를 표시
+
   // LUKA 고유 팔레트 — 기존 판타지 캐릭터와 겹치지 않는 배색
   var C = {
     skin:        '#e8b98a',
@@ -66,6 +87,17 @@
 
     hitFlashT: 0,            // PHASE 6.2: 모슬링 돌진에 닿았을 때의 짧은 플래시 (체력 아님)
 
+    // PHASE 7: 체력 / 생존 상태
+    hp: MAX_HP,
+    maxHp: MAX_HP,
+    invulnT: 0,             // 남은 무적 시간(초) — 0 초과면 추가 피해를 받지 않는다
+    state: 'ALIVE',         // 'ALIVE' | 'DEAD'
+    deathT: 0,              // 사망 연출 남은 시간(초)
+
+    // PHASE 7 SOFT ATTACK ASSIST: 명중 직후에만 잠깐 쓰는 최소 상태.
+    attackAssistFacing: null,  // 마지막으로 보정된 방향(디버그/참고용, 렌더에는 facing 을 그대로 쓴다)
+    attackAssistT: 0,          // 남은 보정 유지 시간(초)
+
     FOOT_W: FOOT_W,
     FOOT_H: FOOT_H,
 
@@ -82,6 +114,15 @@
       this.cooldownT = 0;
       this.attackId = 0;
       this.hitFlashT = 0;
+
+      this.hp = MAX_HP;
+      this.maxHp = MAX_HP;
+      this.invulnT = 0;
+      this.state = 'ALIVE';
+      this.deathT = 0;
+
+      this.attackAssistFacing = null;
+      this.attackAssistT = 0;
     },
 
     /* 전투용 허트박스 — enemy.js 의 getHurtbox() 와 같은 개념(발치 이동 충돌과는
@@ -90,11 +131,36 @@
       return { x: this.x - 6, y: this.y - 16, w: 12, h: 16 };
     },
 
+    /* PHASE 7 SOFT ATTACK ASSIST: 검이 실제로 모슬링을 맞춘 프레임에만
+       enemy.js 가 호출한다(맞은 대상 중 가장 가까운 것 하나만, 이미 걸러서 넘어옴).
+       기존 4방향 규칙 그대로 지배축을 골라 facing 을 그 즉시 그 방향으로
+       맞추고, 잠깐 유지한다. 스윙 자체(진행도/지속시간/판정)는 전혀 건드리지
+       않는다 — attacking 이 true 인 동안은 어차피 update() 가 facing 을
+       움직임으로 갱신하지 않으므로, 스윙 중엔 그저 "고정된 값이 바뀔 뿐"이고
+       스윙이 끝난 뒤에야 이 보정이 실제로 눈에 보인다. */
+    applyAttackAssist: function (targetX, targetY) {
+      if (this.state === 'DEAD') return;
+
+      var dx = targetX - this.x, dy = targetY - this.y;
+      var dir;
+      if (Math.abs(dx) > Math.abs(dy)) dir = dx > 0 ? 'right' : 'left';
+      else dir = dy > 0 ? 'down' : 'up';
+
+      this.facing = dir;
+      this.attackAssistFacing = dir;
+      this.attackAssistT = ATTACK_ASSIST_HOLD;
+    },
+
     /* PHASE 6.2: 모슬링 돌진이 닿았을 때 enemy.js 가 호출한다.
        체력/데미지는 없다 — "적이 닿았다" 를 알리는 순수 연출: 살짝 밀려나고,
        짧게 붉게 번쩍이고, 아주 잠깐 히트스탑이 걸리고, 소리가 난다.
        조이스틱/공격 입력은 이 흐름에서 전혀 건드리지 않으므로 즉시 조작 가능하다. */
     onContactHit: function (fromX, fromY) {
+      // PHASE 7: 무적 중이거나 이미 사망했으면 아무 효과도 없다 — 같은 프레임에
+      // 모슬링 여러 마리가 동시에 닿아도, 아래에서 invulnT 를 세우는 순간 이후로는
+      // (같은 프레임 안에서도) 더 이상 HP 가 깎이지 않는다.
+      if (this.invulnT > 0 || this.state === 'DEAD') return;
+
       var dx = this.x - fromX, dy = this.y - fromY;
       var dist = Math.sqrt(dx * dx + dy * dy) || 1;
       var nx = dx / dist, ny = dy / dist;
@@ -112,14 +178,82 @@
         this.y += ny * CONTACT_KNOCKBACK_DIST;
       }
 
+      // PHASE 6.2 연출은 그대로 유지 — 여기 이후로 체력 로직을 "얹는다"
       this.hitFlashT = CONTACT_FLASH_DURATION;
       if (MG.Game && MG.Game.hitStop) MG.Game.hitStop(CONTACT_HITSTOP);
       if (MG.Audio && MG.Audio.playPlayerContact) MG.Audio.playPlayerContact();
+
+      // PHASE 7: 실제 체력 피해
+      this.hp = Math.max(0, this.hp - 1);
+      this.invulnT = INVULN_DURATION;
+      if (MG.UI && MG.UI.renderHearts) MG.UI.renderHearts(this.hp, this.maxHp);
+
+      if (this.hp <= 0) this.die();
+    },
+
+    /* PHASE 7: HP 가 0 이 되는 순간 호출된다. 게임 오버 메뉴 없이, 짧은 사망
+       연출만 재생하고 자동으로 리스폰한다(update() 의 DEAD 분기 참고). */
+    die: function () {
+      this.state = 'DEAD';
+      this.hp = 0;
+      this.attacking = false;
+      this.moving = false;
+      this.deathT = DEATH_DURATION;
+
+      // PHASE 7 SOFT ATTACK ASSIST: 사망 중엔 보정이 무의미하므로 즉시 지운다.
+      this.attackAssistFacing = null;
+      this.attackAssistT = 0;
+    },
+
+    /* PHASE 7: 사망 연출이 끝난 뒤 호출된다. 기존 맵 스폰 지점을 그대로 쓰고,
+       모슬링도 기존 init() 으로 초기 상태로 되돌린다(새 세이브 시스템 없음). */
+    respawn: function () {
+      var spawn = (MG.Map && MG.Map.spawn) || { x: 200, y: 706 };
+      this.x = spawn.x;
+      this.y = spawn.y;
+      this.facing = 'down';
+      this.attackFacing = 'down';
+      this.moving = false;
+      this.animT = 0;
+      this.attacking = false;
+      this.attackT = 0;
+      this.cooldownT = 0;
+      this.hitFlashT = 0;
+
+      this.hp = this.maxHp;
+      this.invulnT = INVULN_DURATION;   // 부활 직후 잠깐의 안전 시간
+      this.state = 'ALIVE';
+      this.deathT = 0;
+
+      // PHASE 7 SOFT ATTACK ASSIST: 부활 후엔 이전 목숨의 보정 상태가 남아있으면 안 된다.
+      this.attackAssistFacing = null;
+      this.attackAssistT = 0;
+
+      if (MG.UI && MG.UI.renderHearts) MG.UI.renderHearts(this.hp, this.maxHp);
+      if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();
     },
 
     update: function (dt) {
       this.animT += dt;
       this.hitFlashT = Math.max(0, this.hitFlashT - dt);
+
+      // PHASE 7: 사망 중엔 이동/공격 입력을 완전히 무시하고 사망 연출만 진행한다.
+      // 전역 루프는 계속 돌아간다 — 여기서만 조기 반환할 뿐 게임 자체는 멈추지 않는다.
+      if (this.state === 'DEAD') {
+        this.deathT -= dt;
+        if (this.deathT <= 0) this.respawn();
+        return;
+      }
+
+      if (this.invulnT > 0) this.invulnT = Math.max(0, this.invulnT - dt);
+
+      // PHASE 7 SOFT ATTACK ASSIST: 보정 유지 타이머는 스윙이 끝난 뒤에만
+      // 줄어든다 — 스윙 중엔 어차피 facing 이 갱신되지 않으므로(아래 참고),
+      // "명중 이후" 구간에서만 실제로 유지 시간이 소모되게 하기 위함이다.
+      if (!this.attacking && this.attackAssistT > 0) {
+        this.attackAssistT = Math.max(0, this.attackAssistT - dt);
+        if (this.attackAssistT <= 0) this.attackAssistFacing = null;
+      }
 
       var canMove = MG.Game && MG.Game.state === 'PLAY';
 
@@ -129,6 +263,20 @@
       // 공격 입력: PLAY 상태에서만, 그리고 스팸 방지(공격 중/쿨다운 중엔 무시)
       if (canMove && MG.Input && MG.Input.attackPressed &&
           MG.Combat && MG.Combat.canAttack && MG.Combat.canAttack(this)) {
+        // PHASE 7 SOFT ATTACK ASSIST: 새 스윙이 시작되면 이전 스윙에서 남은
+        // 보정 상태를 지운다 — 낡은 타겟 방향이 새 공격에 스며들지 않게 한다.
+        this.attackAssistFacing = null;
+        this.attackAssistT = 0;
+
+        // PRE-ATTACK TARGETING (v0.1.6 모바일 전투 폴리시): startAttack() 이
+        // 곧바로 이 순간의 facing 을 attackFacing 으로 고정하므로, 반드시
+        // startAttack() 보다 먼저 실행해야 한다. 근처에 적당한 대상이 없으면
+        // preTarget 은 null 이고, 기존처럼 현재 facing 그대로 공격한다.
+        if (MG.Enemy && MG.Enemy.findPreAttackTarget) {
+          var preTarget = MG.Enemy.findPreAttackTarget(this.x, this.y, this.facing);
+          if (preTarget) this.facing = preTarget.direction;
+        }
+
         MG.Combat.startAttack(this);
       }
 
@@ -158,7 +306,10 @@
 
         // 공격 중에는 facing 을 고정한다 — 스윙 도중 캐릭터가 방향을 바꾸면
         // "이 스윙은 끝까지 한 방향" 이라는 규칙이 시각적으로 깨진다.
-        if (!this.attacking) {
+        // PHASE 7 SOFT ATTACK ASSIST: attackAssistT 가 남아있는 동안도 마찬가지로
+        // 잠깐 facing 갱신을 건너뛴다 — 그래도 이동 자체(ax/ay 기반 위치 이동)는
+        // 위에서 이미 정상적으로 처리됐으므로 움직임은 전혀 막히지 않는다.
+        if (!this.attacking && this.attackAssistT <= 0) {
           if (Math.abs(ax) > Math.abs(ay)) {
             this.facing = ax > 0 ? 'right' : 'left';
           } else {
@@ -172,6 +323,13 @@
     render: function (ctx) {
       var cx = this.x;
       var feetY = this.y;
+
+      // PHASE 7: 사망 중엔 완전히 다른(단순한) 연출 경로를 탄다 — 걷기/공격
+      // 애니메이션과 무관하게 그 자리에서 페이드+붕괴만 보여준다.
+      if (this.state === 'DEAD') {
+        this.renderDeath(ctx, cx, feetY);
+        return;
+      }
 
       var stepPhase = Math.sin(this.animT * STEP_FREQ);
       var bob, stepOffset;
@@ -192,17 +350,38 @@
 
       var topY = feetY - bob;
 
-      // 공격 중에는 스윙이 시작된 순간의 방향을 그대로 그린다 (facing 이 아니라 attackFacing)
-      var renderFacing = this.attacking ? this.attackFacing : this.facing;
+      // PHASE 7 SOFT ATTACK ASSIST — VISUAL RENDER FIX: 몸(포즈)과 검(스윙)은
+      // 서로 다른 방향 값을 쓴다. 검은 반드시 스윙이 시작된 순간의 방향
+      // (attackFacing) 그대로 끝까지 그려야 한다 — "스윙 궤적은 절대 바뀌지
+      // 않는다"는 기존 규칙 그대로. 반면 몸(포즈)은 항상 facing 을 그대로
+      // 따라간다 — 그래야 명중으로 facing 이 보정된 그 순간, 검이 원래
+      // 방향으로 계속 휘두르는 동안에도 몸은 즉시 맞춘 대상 쪽으로 돌아서는
+      // 모습이 눈에 보인다. (이전엔 attacking 중엔 둘 다 attackFacing 을
+      // 같이 써서, 보정된 facing 이 스윙이 끝날 때까지 화면에 전혀 반영되지
+      // 않았다.)
+      var bodyFacing = this.facing;
+      var swordFacing = this.attackFacing;
 
-      if (renderFacing === 'down') this.drawFront(ctx, cx, topY, stepOffset, this.attacking);
-      else if (renderFacing === 'up') this.drawBack(ctx, cx, topY, stepOffset, this.attacking);
-      else this.drawSide(ctx, cx, topY, stepOffset, renderFacing === 'right', this.attacking);
+      // PHASE 7: 무적 중엔 몸(과 스윙)만 빠르게 깜빡인다 — 팔레트는 바꾸지 않고
+      // 캔버스 알파만 주기적으로 낮춘다. 그림자/피격 플래시는 깜빡임과 무관하게
+      // 항상 그대로 보인다(무적 여부를 알리는 신호는 몸 쪽에만 필요하다).
+      var blinking = this.invulnT > 0;
+      if (blinking) {
+        var phase = Math.floor(this.animT / BLINK_INTERVAL) % 2 === 0;
+        ctx.save();
+        ctx.globalAlpha = phase ? 1.0 : BLINK_ALPHA_LOW;
+      }
+
+      if (bodyFacing === 'down') this.drawFront(ctx, cx, topY, stepOffset, this.attacking);
+      else if (bodyFacing === 'up') this.drawBack(ctx, cx, topY, stepOffset, this.attacking);
+      else this.drawSide(ctx, cx, topY, stepOffset, bodyFacing === 'right', this.attacking);
 
       if (this.attacking && MG.Combat) {
         var progress = this.attackT / MG.Combat.ATTACK_DURATION;
-        this.drawAttackSwing(ctx, cx, topY, renderFacing, progress);
+        this.drawAttackSwing(ctx, cx, topY, swordFacing, progress);
       }
+
+      if (blinking) ctx.restore();
 
       // PHASE 6.2: 모슬링 접촉 플래시 — 팔레트를 바꾸지 않는 옅은 오버레이라
       // 잠깐 번쩍이고 사라진다 (체력 시스템이 아니라 순수 연출)
@@ -213,6 +392,47 @@
         ctx.ellipse(Math.round(cx), Math.round(topY - 11), 8, 12, 0, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // PHASE 7 SOFT ATTACK ASSIST: 기본값 false — 켜면 보정 방향/남은 유지
+      // 시간만 짧은 텍스트로 표시한다(디버그 전용, 평소엔 아무것도 그리지 않는다).
+      if (DEBUG_ATTACK_ASSIST && this.attackAssistT > 0) {
+        ctx.save();
+        ctx.font = '6px monospace';
+        ctx.fillStyle = '#ffd76a';
+        ctx.fillText(
+          'assist=' + this.attackAssistFacing + ' t=' + this.attackAssistT.toFixed(2),
+          cx - 20, topY - 30
+        );
+        ctx.restore();
+      }
+    },
+
+    /* PHASE 7: 사망 연출 — 새 아트 없이 기존 drawFront/Back/Side 를 캔버스
+       변환(스케일+알파)만으로 "가라앉듯 사라지는" 느낌으로 재사용한다.
+       걷기/공격 애니메이션은 죽는 순간의 방향으로 완전히 멈춘다. */
+    renderDeath: function (ctx, cx, feetY) {
+      var p = 1 - Math.max(0, this.deathT) / DEATH_DURATION; // 0(방금 사망) -> 1(연출 끝)
+      var alpha = Math.max(0, 1 - p);
+      var shrinkX = 1 - DEATH_SHRINK * p;
+      var collapseY = 1 - DEATH_COLLAPSE * p;
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      ctx.beginPath();
+      ctx.ellipse(Math.round(cx), Math.round(feetY + 1), 5, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, feetY);
+      ctx.scale(shrinkX, collapseY);
+      ctx.translate(-cx, -feetY);
+
+      var renderFacing = this.attackFacing || this.facing;
+      if (renderFacing === 'down') this.drawFront(ctx, cx, feetY, 0, false);
+      else if (renderFacing === 'up') this.drawBack(ctx, cx, feetY, 0, false);
+      else this.drawSide(ctx, cx, feetY, 0, renderFacing === 'right', false);
+
+      ctx.restore();
     },
 
     /* 정면(아래를 바라봄) */
@@ -366,7 +586,7 @@
 
       var sweep = (100 * Math.PI) / 180;   // 전체로 휘두르는 각도(호)
       var startAngle = baseAngle - sweep / 2;
-      var reach = 14;   // combat.js 의 REACH 와 시각적으로 맞춘 사거리 (px)
+      var reach = 15;   // PHASE 7 COMBAT POLISH: combat.js 의 REACH 와 시각적으로 맞춘 사거리 (14 → 15px)
       var px = Math.round(pivotX), py = Math.round(pivotY);
 
       // 사거리 가늠용 부채꼴 — 지금까지 스윙이 쓸고 지나간 만큼만 채워서

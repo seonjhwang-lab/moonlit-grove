@@ -582,6 +582,188 @@ simulate `MG.Player.onContactHit()`'s knockback). `LUNGE_DIST`/
 `LUNGE_DURATION`/`WINDUP_DURATION`/`LUNGE_TRIGGER_DIST`/`checkPlayerContact()`
 values and the sword hitbox are all untouched. Completed by Claude Code.
 
+## v0.1.6
+
+Phase 7 — player HP & survival. Mossling contact now does real damage
+instead of pure feedback. `js/player.js`: added `hp`/`maxHp`/`invulnT`/
+`state`('ALIVE'|'DEAD')/`deathT`. `onContactHit()` gained a guard
+(`invulnT > 0 || state === 'DEAD'` → no-op) at the top, then — after the
+existing Phase 6.2 knockback/flash/hit-stop/sound run unchanged — applies
+`hp -= 1`, sets `invulnT = 1.2`, updates the HUD, and calls `die()` if
+`hp <= 0`. Because the guard sets `invulnT` synchronously inside the same
+call, two Mosslings contacting on the same frame can only ever deal one
+HP of damage (verified explicitly — see completion report). Invulnerability
+never blocks input: movement/attack/joystick all keep working through the
+1.2s window; the only visible sign is the sprite blinking (alpha
+alternating 1.0/0.2 every 0.1s via `Math.floor(animT / 0.1) % 2`), layered
+under the existing short red contact-flash rather than replacing it.
+Death (`hp <= 0`): `state = 'DEAD'`, `attacking`/`moving` forced false,
+`deathT = 1.5`; `Player.update()` now branches on `state` first and fully
+ignores movement/attack input while dead (the RAF loop itself is never
+paused — only Player's own input handling short-circuits). Render path
+gained `renderDeath()`, which reuses the existing `drawFront/Back/Side`
+calls under a canvas `scale()`+`globalAlpha` transform (no new art) for a
+simple shrink/collapse/fade. After `deathT` runs out, `respawn()` resets
+position to the existing `MG.Map.spawn` (no hardcoded coordinate),
+restores `hp`/`invulnT`(a fresh 1.2s grace window)/`state`, and calls the
+existing `MG.Enemy.init()` verbatim to rebuild the whole Mossling roster
+from `SPAWN_SPOTS` — reusing Phase 6's own reset mechanism rather than
+inventing a new one. `js/enemy.js`: smallest-safe addition — when
+`MG.Player.state === 'DEAD'`, any Mossling still in `CHASE` is dropped
+back to `WANDER` (via the existing `pickWanderTarget()`) instead of
+clustering on the corpse, and the lunge-contact check is skipped entirely
+while the player is dead (redundant with the `onContactHit` guard, but
+avoids pointless `lungeContactDone`/particle churn). `js/ui.js`: new
+`renderHearts(hp, maxHp)` fills `#hud-hearts` with a ❤️/🤍 string,
+event-driven only (called from `onContactHit`/`die`/`respawn`/boot, never
+per render frame). `js/combat.js` and `js/collision.js` untouched.
+Portrait 360×640, camera, map, sword hitbox/timing, mobile input paths all
+unchanged in behavior. Completed by Claude Code.
+
+### v0.1.6 폴리시 — 관대한 검 판정
+
+Version unchanged (still v0.1.6) — real-device feedback said the sword felt
+"too precise" on touch, so `js/combat.js`'s hitbox grew modestly:
+`REACH` 14→15 (+7%), `WIDE` 15→17 (+13%) → effective area +21.4% (within
+the requested 15–25% band). Weighted toward `WIDE` deliberately — on
+touch, facing/lateral misalignment is the more common miss than distance
+misjudgment. `player.js`'s visual swing `reach` constant was bumped to 15
+in lockstep so the blade's drawn arc still matches the hitbox depth
+exactly (only the width now silently exceeds the drawn blade — the
+intentional "slightly more forgiving than it looks" mismatch called for
+in the spec). `GAP`, `ATTACK_DURATION`, `ATTACK_COOLDOWN`,
+`HITBOX_ACTIVE_FROM/TO`, and `getAttackHitbox()`'s structure are all
+untouched — this was a pure constant-tuning pass, not a redesign.
+Verified via direct geometry sweeps (old-vs-new hit/miss boundary
+comparison across all 4 directions) plus full integrated swings
+(`startAttack` → stepped through `ATTACK_DURATION` → HP check) for
+direct/off-center/outside/very-close/behind-player/two-enemies-at-the-edge
+cases — all matched spec expectations exactly. No aim assist, snapping,
+or auto-targeting added. Completed by Claude Code.
+
+### v0.1.6 폴리시 — 소프트 어택 어시스트
+
+Version unchanged (still v0.1.6). Real-device feedback: even with the
+forgiving hitbox, combat still felt too dependent on precise facing. New
+rule, strictly post-hit only: `js/enemy.js`'s `checkSwordHit()` now
+returns whether it actually applied a hit; `Enemy.update()` collects every
+Mossling hit **this frame** into `hitThisFrame`, and — only if that list
+is non-empty — picks the closest one and calls
+`MG.Player.applyAttackAssist(x, y)` once. A miss never populates the
+list, so a miss can never trigger a correction (verified explicitly).
+`js/player.js` gained two fields (`attackAssistFacing`,
+`attackAssistT`) and `ATTACK_ASSIST_HOLD = 0.10`s. `applyAttackAssist()`
+applies the exact 4-direction dominant-axis rule from the spec
+(`abs(dx)>abs(dy)` → left/right, else up/down) and sets `this.facing`
+immediately — but since `update()` already skips facing changes entirely
+while `attacking` is true, the correction is invisible until the swing's
+own animation finishes on its own schedule; nothing about
+`attackT`/`ATTACK_DURATION`/the hitbox itself was touched.
+`attackAssistT` only ticks down while `!attacking` (so the full 0.10s
+hold is spent after the swing ends, not partially eaten by swing tail),
+and while it's still counting down, the movement-facing block is skipped
+too — movement itself (position) is never gated, only which way the
+sprite briefly keeps facing. Reset points: new attack start, hold
+reaching 0, `die()`, and `respawn()` (verified all four). `combat.js` was
+not touched — `getAttackHitbox()`/timings are byte-for-byte the same as
+after the forgiving-hitbox pass. Optional `DEBUG_ATTACK_ASSIST` flag
+added (default `false`, draws a small text readout near the player when
+enabled, nothing when not). Completed by Claude Code.
+
+### v0.1.6 폴리시 — 어택 어시스트 강화
+
+Version unchanged (still v0.1.6). One-constant change per real-device
+feedback that the correction "felt too weak": `ATTACK_ASSIST_HOLD` 0.10 →
+0.18s in `js/player.js` (spec cap was 0.20s). Nothing else about the
+architecture changed — same strict "only after a confirmed hit, closest
+actual target, 4-direction dominant-axis, never touches
+`ATTACK_DURATION`/`ATTACK_COOLDOWN`/`getAttackHitbox()`" rules as the
+prior pass. Re-verified the full A–H test matrix (direct hit, off-center
+flip, miss, nearby-but-not-hit, two-hits-closest-wins, behind-player,
+move-during-hold, hold-expiration) against the new duration: measured
+post-swing hold window was 0.183s (11 frames at 60fps — the same ~3ms
+frame-quantization overshoot pattern seen elsewhere in this project, not
+a bug), facing stayed held for that entire window while movement kept
+working every single frame (verified with constant joystick input
+throughout), and normal movement-facing resumed exactly on schedule once
+the timer hit zero. Completed by Claude Code.
+
+### v0.1.6 폴리시 — 어택 어시스트 재강화 (모바일 체감)
+
+Version unchanged (still v0.1.6). Same single-constant pattern again:
+"0.18초도 거의 안 느껴진다"는 실기기 피드백을 받아 `ATTACK_ASSIST_HOLD`
+0.18 → 0.24초 (스펙 상한 0.25초 이내). 측정된 스윙-이후 유지 구간은 60fps
+프레임 반올림 때문에 0.250초로 찍히지만(15프레임 × 1/60s), 실제 설정값은
+정확히 0.24초로 확인됨(`applyAttackAssist()` 호출 직후 피크값 직접 측정) —
+이 프로젝트 전반에서 반복돼온 것과 같은 프레임 양자화 오차일 뿐 로직 문제
+아님. 연속 공격 케이스(§7)도 별도 검증: 이론상 현재 타이밍
+(`ATTACK_DURATION`=0.22s + `ATTACK_COOLDOWN`=0.30s ≈ 0.52s 뒤에야 다음
+스윙 가능)에서는 새 어시스트 유지시간(0.24s)이 다음 스윙보다 먼저
+자연스럽게 끝나버려 "이전 홀드 도중 새로 명중" 상황이 정상적인 쿨다운
+준수 플레이로는 사실상 재현되지 않는다 — 그래도 `applyAttackAssist()` 는
+호출될 때마다 이전 상태와 무관하게 무조건 새로 덮어쓰므로(가드 없음),
+아직 0.10s 남은 이전 홀드 도중 강제로 새 명중을 호출해도 즉시 새 방향/
+풀타이머로 갱신됨을 직접 확인했다 — "이전 타겟이 새 타겟을 막지 않는다"
+요구사항이 코드 레벨에서 항상 성립함을 증명. 나머지 아키텍처(대상 선정/
+판정/스윙)는 완전히 동일. Completed by Claude Code.
+
+### v0.1.6 폴리시 — 어택 어시스트 렌더 분리 (실제 버그 수정)
+
+Version unchanged (still v0.1.6). A read-only audit (previous pass) found
+the assist logic was firing correctly on every hit but was **invisible**
+until the swing animation fully finished: `Player.render()` used a single
+`renderFacing = this.attacking ? this.attackFacing : this.facing` for
+both the body pose *and* the sword-swing overlay, so the corrected
+`this.facing` had zero visible effect for the remainder of the swing
+(up to ~0.16s after the hit, since a hit can land as early as 28% into
+the 0.22s swing). Real, verified fix: `render()` now uses two separate
+variables — `bodyFacing = this.facing` (always, feeds
+`drawFront`/`drawBack`/`drawSide`) and `swordFacing = this.attackFacing`
+(feeds `drawAttackSwing()` only) — so the body visibly turns toward the
+hit target the instant `applyAttackAssist()` fires, while the blade
+itself keeps swinging along its original locked arc, exactly matching
+the spec's own worked example (facing right, sword continues right,
+body turns down). Verified via draw-call spies on the real `render()`
+call (not just state inspection) at both desktop and a 375×812 mobile
+viewport: body pose and sword direction diverge correctly during the
+post-hit swing tail, movement/joystick input keeps working throughout,
+and the hold/expiration timing is untouched. No hitbox, timing, target
+selection, or `hitThisFrame` logic was touched — this was purely
+`Player.render()`'s direction routing. Completed by Claude Code.
+
+### v0.1.6 폴리시 — 사전 공격 타겟팅 (Pre-Attack Targeting)
+
+Version unchanged (still v0.1.6). New, independent layer that runs
+*before* the swing starts (complements, does not replace, the existing
+post-hit Soft Attack Assist which still runs unchanged after a real hit).
+New read-only query in `js/enemy.js`: `Enemy.findPreAttackTarget(px, py,
+facing)` — scans `this.list` for enemies in `IDLE`/`WANDER`/`CHASE`
+(excludes `HIT`/`DEAD`), rejects anything beyond `PRE_ATTACK_TARGET_RADIUS`
+(28px) or outside a `PRE_ATTACK_CONE_HALF_ANGLE` (50°, matching the
+sword's own 100° visual sweep) around the facing vector, and rejects
+anything whose dominant 4-axis direction isn't the current facing or one
+of its two adjacent directions (so a `right`-facing player can never be
+pulled toward `left` — no 180°s). Ranks same-direction targets above
+adjacent-direction ones unconditionally (a farther directly-ahead enemy
+always beats a closer off-axis one), then closest distance, then lowest
+`enemy.id` as the final deterministic tiebreak (never array order).
+`js/player.js`'s attack-trigger block in `update()` calls it once, right
+before `MG.Combat.startAttack(this)`, and sets `this.facing` to the
+result's direction if one was found — `startAttack()` itself (in
+`combat.js`, untouched) then locks that into `attackFacing` exactly as it
+already did. Verified the pre-attack-selected direction is exactly what
+ends up in `attackFacing` and that the resulting swing actually connects
+with the picked target (not just a facing coincidence) — confirmed via a
+genuine direction change (`right`→`down`) that both fired correctly and
+landed a real hit. Verified the fallback path (no eligible target →
+`null` → current facing preserved, identical to pre-existing behavior)
+under a realistic repeated-attack-while-moving mobile pattern. `combat.js`,
+hitbox geometry, `ATTACK_DURATION`/`ATTACK_COOLDOWN`, and the existing
+post-hit assist's own logic/constants are all untouched — full Phase 7 +
+combat regression suite re-verified passing (HP, invulnerability, death/
+respawn cycle, one-hit-per-swing, contact/knockback/lunge, 9-Mossling
+reset). Completed by Claude Code.
+
 ---
 
 # HANDOFF STATUS
@@ -592,10 +774,13 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 6.2 + overlap-fix polish, v0.1.5 — done, stable. Not yet committed
-to git this pass (verified locally; a commit was intentionally not made —
-see git status/diff in the completion report). Next task is Phase 7
-(player HP/damage/knockback/invincibility/game over), not started.
+Phase 7 + forgiving-hitbox + soft-attack-assist (0.24s hold + render-split
+fix) + pre-attack targeting polish, v0.1.6 — done, stable. Not yet
+committed to git this pass (verified locally; a commit was intentionally
+not made — see git status/diff in the completion report). Next task is
+Phase 8 (not yet specified — no healing items/inventory/game-over menu/
+quests/bosses/full-auto-aim implemented per explicit scope exclusions
+across all passes so far).
 
 Next owner:
 

@@ -18,7 +18,7 @@
       if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();  // 모슬링 배치 (맵 충돌 데이터 필요 — Map 이후)
       MG.UI.init();                     // 오버레이 / 방향 경고 (Game 이후에 초기화)
 
-      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 6.2');
+      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 7');
     } catch (err) {
       console.error('[MG] 초기화 실패:', err);
     }

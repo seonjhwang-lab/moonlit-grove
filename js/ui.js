@@ -19,10 +19,15 @@
       this.el.title = document.getElementById('overlay-title');
       this.el.startBtn = document.getElementById('btn-start');
       this.el.version = document.getElementById('hud-version');
+      this.el.hearts = document.getElementById('hud-hearts');
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
       }
+
+      // PHASE 7: 부팅 시점의 초기 체력을 곧바로 표시한다 (이후로는 HP가 실제로
+      // 바뀔 때만 player.js 가 다시 호출한다 — 매 프레임 갱신하지 않는다)
+      if (MG.Player) this.renderHearts(MG.Player.hp, MG.Player.maxHp);
 
       var self = this;
 
@@ -85,6 +90,20 @@
       this.isPortrait = portrait;
       document.body.classList.toggle('mg-portrait', portrait);
       document.body.classList.toggle('mg-landscape', !portrait);
+    },
+
+    /* PHASE 7: #hud-hearts 를 하트 이모지로 채운다. UI 프레임워크 없이 문자열
+       하나만 다시 그리며, HP가 실제로 바뀐 순간에만(player.js 쪽에서) 호출된다 —
+       매 렌더 프레임마다 갱신하지 않는다. */
+    renderHearts: function (hp, maxHp) {
+      if (!this.el.hearts) this.el.hearts = document.getElementById('hud-hearts');
+      if (!this.el.hearts) return;
+
+      var full = Math.max(0, Math.min(maxHp, hp));
+      var str = '';
+      for (var i = 0; i < maxHp; i++) str += (i < full) ? '❤️' : '🤍';
+
+      if (this.el.hearts.textContent !== str) this.el.hearts.textContent = str;
     }
   };
 

@@ -80,6 +80,34 @@
   var CHASE_STOP_DIST    = PLAYER_HURT_HALF_W + ENEMY_HURT_HALF_W + 3;  // = 15
   var LUNGE_CONTACT_DIST = PLAYER_HURT_HALF_W + ENEMY_HURT_HALF_W - 3;  // = 9
 
+  /* PRE-ATTACK TARGETING (v0.1.6 모바일 전투 폴리시): 공격 버튼을 누르는 "그
+     순간" 근처 몬스터를 한 번 살펴서 살짝 방향을 맞춰준다 — 자동조준이 아니라
+     "대략 향하고 있으면 그쪽으로 정렬해준다" 정도의 관대함. 반경은 검
+     REACH(15)+GAP(3) 보다 조금 큰 정도로 일부러 짧게 잡아 검이 어차피 닿을
+     법한 거리 밖의 적은 절대 끌어당기지 않게 한다. 원뿔(50도 반각)은
+     player.js 의 검 스윙 자체가 그리는 부채꼴(100도)과 정확히 맞춰, "화면에
+     보이는 검의 범위"보다 더 관대하게 끌어오지 않는다. 방향 제한(현재 facing
+     의 인접 2방향까지만, 반대 방향은 절대 안 됨)은 원뿔과 별개의 독립된
+     필터다 — 원뿔만으로는 이론상 반대 방향에 아주 가까운 대각선 적도 걸릴 수
+     있으므로, 두 조건을 모두 만족해야만 후보가 된다. */
+  var PRE_ATTACK_TARGET_RADIUS = 28;                    // 세계 픽셀
+  var PRE_ATTACK_CONE_HALF_ANGLE = 50 * Math.PI / 180;  // 라디안 (반각 50도 = 전체 100도)
+
+  var ADJACENT_DIRS = {
+    right: ['up', 'down'],
+    left:  ['up', 'down'],
+    up:    ['left', 'right'],
+    down:  ['left', 'right']
+  };
+  var FACING_ANGLE = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+
+  function angleDiff(a, b) {
+    var d = a - b;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
   // true 로 바꾸면 감지 반경 / 상태 / HP / 충돌 상자를 그려서 확인할 수 있다
   var DEBUG_ENEMY = false;
 
@@ -185,6 +213,8 @@
       if (!MG.Player) return;
 
       var player = MG.Player;
+      var playerDead = player.state === 'DEAD'; // PHASE 7
+      var hitThisFrame = []; // PHASE 7 SOFT ATTACK ASSIST: 이번 프레임에 실제로 맞은 모슬링들
       var i;
 
       for (i = 0; i < this.list.length; i++) {
@@ -198,6 +228,17 @@
 
         if (e.state === 'HIT') {
           this.updateHit(e, dt);
+        } else if (playerDead) {
+          // PHASE 7: 플레이어가 사망 연출 중이면 더 이상 추격 대상으로 삼지 않는다
+          // (시체 주변에 몰려있지 않도록 즉시 WANDER 로 되돌린다). 새 상태를
+          // 추가하지 않고 기존 WANDER/IDLE 순환을 그대로 재사용한다.
+          if (e.state === 'CHASE') {
+            e.state = 'WANDER';
+            e.chasePhase = 'approach';
+            e.chaseSubT = 0;
+            this.pickWanderTarget(e);
+          }
+          this.updateWanderOrIdle(e, dt);
         } else {
           this.updateDetection(e, player);
           if (e.state === 'CHASE') this.updateChase(e, dt, player);
@@ -206,14 +247,32 @@
 
         // 검 판정은 죽지 않은 모슬링이면 상태와 무관하게 매 프레임 확인한다
         // (IDLE/WANDER/CHASE/HIT 어느 상태에서 맞아도 맞는다 — 죽은 것만 제외)
-        this.checkSwordHit(e, player);
+        if (this.checkSwordHit(e, player)) hitThisFrame.push(e);
 
         // PHASE 6.2: 플레이어 접촉은 "돌진 중"에만 의미가 있다 (그냥 스쳐 지나가는
         // 평상시 추격 중 몸이 스치는 것까지 매번 반응하면 오히려 정신없다) —
         // lungeContactDone 가드로 이 돌진 동안 한 번만 발동한다.
-        if (e.state === 'CHASE' && e.chasePhase === 'lunge' && !e.lungeContactDone) {
+        // PHASE 7: 플레이어가 이미 사망했으면 접촉 판정 자체를 하지 않는다
+        // (onContactHit() 쪽 가드로도 안전하지만, 여기서 먼저 걸러 불필요한
+        // lungeContactDone/파티클 발생을 막는다).
+        if (!playerDead && e.state === 'CHASE' && e.chasePhase === 'lunge' && !e.lungeContactDone) {
           this.checkPlayerContact(e, player);
         }
+      }
+
+      // PHASE 7 SOFT ATTACK ASSIST: 이번 프레임에 실제로 맞은 모슬링이 있으면
+      // (하나든 여럿이든) 그중 플레이어와 가장 가까운 하나만 골라 방향 보정에
+      // 넘긴다. 맞지 않은 모슬링은 애초에 hitThisFrame 에 들어오지 않으므로
+      // "빗나가면 보정 없음" 이 자연스럽게 보장된다.
+      if (hitThisFrame.length > 0 && MG.Player.applyAttackAssist) {
+        var closest = hitThisFrame[0];
+        var closestDist = Math.hypot(closest.x - player.x, closest.y - player.y);
+        for (var k = 1; k < hitThisFrame.length; k++) {
+          var cand = hitThisFrame[k];
+          var d = Math.hypot(cand.x - player.x, cand.y - player.y);
+          if (d < closestDist) { closest = cand; closestDist = d; }
+        }
+        MG.Player.applyAttackAssist(closest.x, closest.y);
       }
 
       // 사망 완료 → 배열에서 제거
@@ -412,17 +471,21 @@
     },
 
     /* ------------------------------------------------------ 검 판정 연결 */
+    /* PHASE 7 SOFT ATTACK ASSIST: 실제로 명중을 적용했으면 true 를 반환한다 —
+       enemy.js의 update() 루프가 "이번 프레임에 진짜로 맞은 모슬링"만 모아
+       player.js 쪽 방향 보정에 넘기기 위한 신호다. 판정 로직 자체는 그대로다. */
     checkSwordHit: function (e, player) {
-      if (e.state === 'DEAD') return;
-      if (player.attackId === e.lastHitAttackId) return; // 이 스윙으로는 이미 맞았다
+      if (e.state === 'DEAD') return false;
+      if (player.attackId === e.lastHitAttackId) return false; // 이 스윙으로는 이미 맞았다
 
       var box = MG.Combat && MG.Combat.getAttackHitbox ? MG.Combat.getAttackHitbox(player) : null;
-      if (!box) return;
+      if (!box) return false;
 
       var hurt = this.getHurtbox(e);
-      if (!MG.Collision.overlaps(box.x, box.y, box.w, box.h, hurt.x, hurt.y, hurt.w, hurt.h)) return;
+      if (!MG.Collision.overlaps(box.x, box.y, box.w, box.h, hurt.x, hurt.y, hurt.w, hurt.h)) return false;
 
       this.applyHit(e, player);
+      return true;
     },
 
     /* PHASE 6.1: "칼이 닿았다" 는 확신을 주기 위한 타격 확인 시퀀스.
@@ -472,6 +535,42 @@
       var dx = player.x - e.x, dy = player.y - e.y;
       var dist = Math.sqrt(dx * dx + dy * dy) || 1;
       this.spawnParticles(player.x, player.y, 3, dx / dist, dy / dist, 'contact');
+    },
+
+    /* PRE-ATTACK TARGETING: 읽기 전용 조회 — 상태를 바꾸지 않는다. player.js 가
+       공격을 "시작하기 직전"에 한 번만 호출해, 근처의 살아있는 모슬링 중
+       (현재 facing 과 같은 방향이거나 인접한 방향, 원뿔 안, 반경 안인) 가장
+       적절한 하나를 골라 돌려준다. 없으면 null — 그러면 기존처럼 현재 facing
+       그대로 공격한다. 매 프레임 도는 게 아니라 이 호출 하나뿐이므로 여기서
+       엔티티 상태를 하나도 건드리지 않는다(순수 함수). */
+    findPreAttackTarget: function (px, py, facing) {
+      var facingAngle = FACING_ANGLE[facing];
+      var adjacent = ADJACENT_DIRS[facing] || [];
+      var best = null, bestDir = null, bestDist = Infinity, bestSameDir = false;
+
+      for (var i = 0; i < this.list.length; i++) {
+        var e = this.list[i];
+        if (e.state !== 'IDLE' && e.state !== 'WANDER' && e.state !== 'CHASE') continue; // HIT/DEAD 제외
+
+        var dx = e.x - px, dy = e.y - py;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 0.001 || dist > PRE_ATTACK_TARGET_RADIUS) continue;
+
+        var dir = (Math.abs(dx) > Math.abs(dy)) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        var sameDir = (dir === facing);
+        if (!sameDir && adjacent.indexOf(dir) === -1) continue; // 반대 방향 등은 애초에 후보가 아니다
+
+        var angle = Math.atan2(dy, dx);
+        if (Math.abs(angleDiff(angle, facingAngle)) > PRE_ATTACK_CONE_HALF_ANGLE) continue; // 원뿔 밖
+
+        if (best === null ||
+            (sameDir && !bestSameDir) ||
+            (sameDir === bestSameDir && (dist < bestDist || (dist === bestDist && e.id < best.id)))) {
+          best = e; bestDir = dir; bestDist = dist; bestSameDir = sameDir;
+        }
+      }
+
+      return best ? { enemy: best, direction: bestDir } : null;
     },
 
     /* ------------------------------------------------------------ 파티클 */
