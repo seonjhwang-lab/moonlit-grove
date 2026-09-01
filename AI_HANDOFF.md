@@ -775,12 +775,87 @@ AI-assisted development workflow
 Current task:
 
 Phase 7 + forgiving-hitbox + soft-attack-assist (0.24s hold + render-split
-fix) + pre-attack targeting polish, v0.1.6 — done, stable. Not yet
-committed to git this pass (verified locally; a commit was intentionally
-not made — see git status/diff in the completion report). Next task is
-Phase 8 (not yet specified — no healing items/inventory/game-over menu/
-quests/bosses/full-auto-aim implemented per explicit scope exclusions
-across all passes so far).
+fix) + pre-attack targeting (strengthened, see below), v0.1.6 — done,
+stable. Not yet committed to git this pass (verified locally; a commit
+was intentionally not made — see git status/diff in the completion
+report). Next task is Phase 8 (not yet specified — no healing items/
+inventory/game-over menu/quests/bosses/full-auto-aim implemented per
+explicit scope exclusions across all passes so far).
+
+### v0.1.6 폴리시 — 사전 타겟팅 강화 (거리 가중 우선순위)
+
+Version unchanged (still v0.1.6). `js/enemy.js`'s `findPreAttackTarget()`:
+`PRE_ATTACK_TARGET_RADIUS` 28→40px, `PRE_ATTACK_CONE_HALF_ANGLE` 50→70°
+(140° total). More importantly, the selection rule changed from a hard
+tier (same-direction *always* beats adjacent-direction regardless of
+distance) to a distance score: `score = dist + (sameDir ? 0 :
+ADJACENT_DIR_PENALTY)` with `ADJACENT_DIR_PENALTY = 6` (~15% of the
+radius) — same-direction still wins when distances are close, but a
+significantly closer adjacent-direction target now wins outright
+(verified the exact threshold: adjacent wins strictly below `same-dir
+dist − 6`, ties go to same-direction via lowest-id). Two real conflicts
+were found and resolved while implementing this, both worth knowing
+about before touching this function again:
+
+1. **Cone must be measured against each candidate's own classified
+   direction axis, not the raw facing vector.** A candidate whose
+   dominant axis is one of the two *adjacent* directions is by
+   definition up to 90° from facing — no cone value ≤90° measured from
+   facing can ever admit a purely-perpendicular target (e.g. an enemy
+   directly below a `right`-facing player), yet accepting exactly that
+   case is a hard requirement. Measuring the cone from the candidate's
+   *own* `dir` axis instead works cleanly: same-direction candidates are
+   always ≤45° from their axis (so the cone never binds), and adjacent-
+   direction candidates are also always ≤45° from *their* axis — so at
+   70° the cone is a deliberate no-op safety net, not a real filter. This
+   is fine/intended: the direction-adjacency check (same + adjacent
+   only, opposite always excluded) is what actually enforces "no 180°s";
+   the cone constant exists for future-proofing if it's ever narrowed
+   below 45° again.
+2. **Targeting radius (40px) now exceeds the actual (unchanged, per
+   instructions) sword hitbox's real reach in every direction** —
+   measured directly against `getAttackHitbox()`: ~23.5px left/right,
+   ~19.5px down, ~27.5px up (asymmetric because `getAttackHitbox()`
+   anchors to `player.y - 10`, the waist, not the feet). A stationary
+   attack at the outer edge of the new 40px search radius can therefore
+   correctly re-aim `attackFacing` toward a real nearby target and still
+   whiff, because pre-attack targeting only ever influences *direction*,
+   never the hitbox itself (explicitly out of scope). In realistic
+   mobile play — the player moving toward what they're attacking while
+   tapping, not frozen in place — the ~0.7×`SPEED` movement during the
+   swing consistently closes this gap; verified all three of the spec's
+   worked examples (A/B/E) connect when combined with matching movement
+   input, and only the artificially-stationary case whiffs. Not treated
+   as a bug — flagging it as the honest edge case it is.
+
+### v0.1.6 폴리시 — 히트박스 인지 타겟팅 (실제로 닿는 후보만 남긴다)
+
+Version unchanged (still v0.1.6). Directly closes the "stationary
+whiff" edge case documented right above this entry. `js/combat.js`
+gained `computeHitboxGeometry(px, py, dir)` — the exact same `REACH`/
+`WIDE`/`GAP`/waist-offset math `getAttackHitbox()` already used,
+factored out into a pure function that takes no attack state at all
+(no `attacking`/`attackT`/`attackFacing` needed). `getAttackHitbox()`
+now just calls it after its existing `isHitboxActive()` gate — same
+constants, same behavior, zero duplication. `js/enemy.js`'s
+`findPreAttackTarget()` calls this new function for every candidate
+that already passed the radius/direction/cone filters, and rejects
+any candidate whose classified direction's hitbox wouldn't actually
+overlap its hurtbox — only real, currently-reachable candidates ever
+reach the distance-scoring step. `PRE_ATTACK_TARGET_RADIUS` (40) stays
+as the broad candidate-search net; it is explicitly not the acceptance
+radius anymore. Verified with a **stationary player** (the prior
+pass's known gap) across close-direct, close-adjacent, outer-edge,
+beyond-real-reach, no-target, behind-player, multiple-candidates, and
+HIT/DEAD-exclusion cases, plus all 4 facings — every case that gets
+redirected now actually connects with zero movement, and the
+previously-broken "outer-edge"/"beyond-reach" cases now correctly
+decline to redirect at all rather than aiming-then-missing. Full
+mobile (joystick+attack simultaneous, movement never blocked) and
+Phase 7 (HP/invuln/death/respawn/enemy-reset) regressions re-verified
+passing. `getAttackHitbox()`'s contract, `ATTACK_DURATION`/
+`ATTACK_COOLDOWN`/`HITBOX_ACTIVE_FROM`/`TO`/`REACH`/`WIDE`/`GAP` values
+are all byte-for-byte unchanged. Completed by Claude Code.
 
 Next owner:
 

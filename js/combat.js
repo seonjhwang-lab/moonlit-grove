@@ -83,14 +83,14 @@
       return p >= HITBOX_ACTIVE_FROM && p <= HITBOX_ACTIVE_TO;
     },
 
-    /* 플레이어의 공격 히트박스를 월드 좌표로 반환한다.
-       활성 구간이 아니면 null (PHASE 6 에서 "null 이면 판정 없음"으로 바로 쓸 수 있다). */
-    getAttackHitbox: function (player) {
-      if (!this.isHitboxActive(player)) return null;
-
-      var cx = player.x;
-      var cy = player.y - 10;   // 대략 몸통 중심 높이 (발이 아니라 허리 쯤)
-      var dir = player.attackFacing;
+    /* PRE-ATTACK TARGETING (HITBOX-AWARE): 실제 공격 상태(attacking/attackT/
+       attackFacing)와 무관하게, "이 위치에서 이 방향으로 휘두르면 히트박스가
+       어디에 놓이는가"만 계산하는 순수 함수. getAttackHitbox() 와 완전히 같은
+       상수(REACH/WIDE/GAP)를 그대로 재사용하므로 두 값이 어긋날 일이 없다 —
+       공격 판정 자체(활성 구간 여부 등)는 여기서 전혀 건드리지 않는다. */
+    computeHitboxGeometry: function (px, py, dir) {
+      var cx = px;
+      var cy = py - 10;   // 대략 몸통 중심 높이 (발이 아니라 허리 쯤)
       var w, h, x, y;
 
       if (dir === 'up') {
@@ -107,6 +107,13 @@
         x = cx + GAP; y = cy - h / 2;
       }
       return { x: x, y: y, w: w, h: h };
+    },
+
+    /* 플레이어의 공격 히트박스를 월드 좌표로 반환한다.
+       활성 구간이 아니면 null (PHASE 6 에서 "null 이면 판정 없음"으로 바로 쓸 수 있다). */
+    getAttackHitbox: function (player) {
+      if (!this.isHitboxActive(player)) return null;
+      return this.computeHitboxGeometry(player.x, player.y, player.attackFacing);
     },
 
     /* DEBUG_COMBAT 이 true 일 때만 game.js 가 (카메라 변환이 적용된 상태로) 호출한다. */

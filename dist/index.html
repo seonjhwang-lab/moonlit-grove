@@ -1448,14 +1448,14 @@ body:not(.mg-touch) .attack-button {
       return p >= HITBOX_ACTIVE_FROM && p <= HITBOX_ACTIVE_TO;
     },
 
-    /* 플레이어의 공격 히트박스를 월드 좌표로 반환한다.
-       활성 구간이 아니면 null (PHASE 6 에서 "null 이면 판정 없음"으로 바로 쓸 수 있다). */
-    getAttackHitbox: function (player) {
-      if (!this.isHitboxActive(player)) return null;
-
-      var cx = player.x;
-      var cy = player.y - 10;   // 대략 몸통 중심 높이 (발이 아니라 허리 쯤)
-      var dir = player.attackFacing;
+    /* PRE-ATTACK TARGETING (HITBOX-AWARE): 실제 공격 상태(attacking/attackT/
+       attackFacing)와 무관하게, "이 위치에서 이 방향으로 휘두르면 히트박스가
+       어디에 놓이는가"만 계산하는 순수 함수. getAttackHitbox() 와 완전히 같은
+       상수(REACH/WIDE/GAP)를 그대로 재사용하므로 두 값이 어긋날 일이 없다 —
+       공격 판정 자체(활성 구간 여부 등)는 여기서 전혀 건드리지 않는다. */
+    computeHitboxGeometry: function (px, py, dir) {
+      var cx = px;
+      var cy = py - 10;   // 대략 몸통 중심 높이 (발이 아니라 허리 쯤)
       var w, h, x, y;
 
       if (dir === 'up') {
@@ -1472,6 +1472,13 @@ body:not(.mg-touch) .attack-button {
         x = cx + GAP; y = cy - h / 2;
       }
       return { x: x, y: y, w: w, h: h };
+    },
+
+    /* 플레이어의 공격 히트박스를 월드 좌표로 반환한다.
+       활성 구간이 아니면 null (PHASE 6 에서 "null 이면 판정 없음"으로 바로 쓸 수 있다). */
+    getAttackHitbox: function (player) {
+      if (!this.isHitboxActive(player)) return null;
+      return this.computeHitboxGeometry(player.x, player.y, player.attackFacing);
     },
 
     /* DEBUG_COMBAT 이 true 일 때만 game.js 가 (카메라 변환이 적용된 상태로) 호출한다. */
@@ -2247,16 +2254,31 @@ body:not(.mg-touch) .attack-button {
 
   /* PRE-ATTACK TARGETING (v0.1.6 모바일 전투 폴리시): 공격 버튼을 누르는 "그
      순간" 근처 몬스터를 한 번 살펴서 살짝 방향을 맞춰준다 — 자동조준이 아니라
-     "대략 향하고 있으면 그쪽으로 정렬해준다" 정도의 관대함. 반경은 검
-     REACH(15)+GAP(3) 보다 조금 큰 정도로 일부러 짧게 잡아 검이 어차피 닿을
-     법한 거리 밖의 적은 절대 끌어당기지 않게 한다. 원뿔(50도 반각)은
-     player.js 의 검 스윙 자체가 그리는 부채꼴(100도)과 정확히 맞춰, "화면에
-     보이는 검의 범위"보다 더 관대하게 끌어오지 않는다. 방향 제한(현재 facing
-     의 인접 2방향까지만, 반대 방향은 절대 안 됨)은 원뿔과 별개의 독립된
-     필터다 — 원뿔만으로는 이론상 반대 방향에 아주 가까운 대각선 적도 걸릴 수
-     있으므로, 두 조건을 모두 만족해야만 후보가 된다. */
-  var PRE_ATTACK_TARGET_RADIUS = 28;                    // 세계 픽셀
-  var PRE_ATTACK_CONE_HALF_ANGLE = 50 * Math.PI / 180;  // 라디안 (반각 50도 = 전체 100도)
+     "대략 향하고 있으면 그쪽으로 정렬해준다" 정도의 관대함.
+     COMBAT FEEL ADJUSTMENT: "그래도 너무 정확히 조준해야 한다"는 실기기
+     피드백을 받아 두 번째로 관대하게 늘렸다 — 반경 28→40px, 원뿔 반각
+     50→70도(전체 140도). 반대 방향(180도) 제한은 그대로 유지한다(원뿔과
+     별개의 독립된 필터 — 원뿔만으로는 반대편 대각선 적도 걸릴 수 있어
+     두 조건 모두 만족해야 후보가 된다). */
+  var PRE_ATTACK_TARGET_RADIUS = 40;                    // 세계 픽셀 (28 → 40) — 후보를 "찾는" 넓은 반경일 뿐, 최종 합격선이 아니다
+  var PRE_ATTACK_CONE_HALF_ANGLE = 70 * Math.PI / 180;  // 라디안 (반각 50→70도 = 전체 140도)
+
+  /* HITBOX-AWARE TARGET SELECTION: 반경(40px)은 검의 실제 사거리(방향별로
+     좌우 ~23.5px / 아래 ~19.5px / 위 ~27.5px, MG.Combat.computeHitboxGeometry()
+     로 직접 측정한 값 — getAttackHitbox() 의 cy 기준점이 발이 아니라 허리라서
+     방향마다 비대칭이다)보다 넓다. 그래서 반경/방향/원뿔을 통과한 후보라도
+     findPreAttackTarget() 안에서 실제 히트박스와 겹치는지 한 번 더 확인해야
+     후보로 남는다 — "게임이 방향을 맞춰줬는데 칼이 안 닿았다"는 위화감을
+     없애기 위한 마지막 관문이다. */
+
+  /* COMBAT FEEL ADJUSTMENT: 이전에는 "같은 방향" 후보가 거리와 무관하게 항상
+     "인접 방향" 후보를 이겼다(직진 축 우선 하드 티어). 실제로는 "정확히
+     정렬됐지만 꽤 먼" 적보다 "정렬은 살짝 어긋나도 훨씬 가까운" 적을 치는 게
+     더 자연스러워, 순위를 하드 티어 대신 거리 기반 점수로 바꿨다 — 인접
+     방향 후보에게만 이 페널티(가상 거리)를 더해 비교한다. 값은 타겟팅
+     반경(40)의 약 15% — 거리가 "비슷"할 때는 같은 방향이 그대로 이기고,
+     인접 방향 쪽이 이 페널티보다 더 크게(=확실히) 가까울 때만 역전된다. */
+  var ADJACENT_DIR_PENALTY = 6;                         // 세계 픽셀 (PRE_ATTACK_TARGET_RADIUS 의 ~15%)
 
   var ADJACENT_DIRS = {
     right: ['up', 'down'],
@@ -2711,7 +2733,7 @@ body:not(.mg-touch) .attack-button {
     findPreAttackTarget: function (px, py, facing) {
       var facingAngle = FACING_ANGLE[facing];
       var adjacent = ADJACENT_DIRS[facing] || [];
-      var best = null, bestDir = null, bestDist = Infinity, bestSameDir = false;
+      var best = null, bestDir = null, bestScore = Infinity;
 
       for (var i = 0; i < this.list.length; i++) {
         var e = this.list[i];
@@ -2723,15 +2745,46 @@ body:not(.mg-touch) .attack-button {
 
         var dir = (Math.abs(dx) > Math.abs(dy)) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
         var sameDir = (dir === facing);
-        if (!sameDir && adjacent.indexOf(dir) === -1) continue; // 반대 방향 등은 애초에 후보가 아니다
+        if (!sameDir && adjacent.indexOf(dir) === -1) continue; // 반대 방향(180도)은 애초에 후보가 아니다
 
+        // 원뿔은 "현재 facing 기준"이 아니라 "이미 방향 필터를 통과한 후보 자신의
+        // 판정 축(dir) 기준"으로 잰다. dir 은 위에서 이미 facing 또는 그 인접
+        // 2방향 중 하나로 제한돼 있으므로(반대 방향은 위에서 이미 걸러짐),
+        // dir 자체가 곧 "이 원뿔이 감싸는 축"이다. facing 기준으로 재면 정면의
+        // 좌우 인접 방향(예: RIGHT 기준 위/아래)은 정의상 90도 떨어져 있어
+        // 어떤 원뿔 각도를 줘도 정확히 수직인 대상(예시 B: 정면 오른쪽 기준
+        // 바로 아래)을 절대 통과시킬 수 없다 — "인접 방향은 확실히 받아준다"
+        // 는 요구와 모순된다. 자신의 축을 기준으로 재면 동일 방향 후보는
+        // 정의상 45도 이내(항상 통과)이고, 인접 방향 후보도 그 축 안에서
+        // 최대 45도까지만 벗어날 수 있어 70도 원뿔 안에 항상 들어온다 —
+        // 즉 이 원뿔은 "방향 필터가 이미 허용한 것을 더 좁히지 않으면서,
+        // 방향 필터만으로는 못 막는 극단적 사례에 대한 안전망" 역할이다.
         var angle = Math.atan2(dy, dx);
-        if (Math.abs(angleDiff(angle, facingAngle)) > PRE_ATTACK_CONE_HALF_ANGLE) continue; // 원뿔 밖
+        var dirAxisAngle = FACING_ANGLE[dir];
+        if (Math.abs(angleDiff(angle, dirAxisAngle)) > PRE_ATTACK_CONE_HALF_ANGLE) continue; // 원뿔 밖
 
-        if (best === null ||
-            (sameDir && !bestSameDir) ||
-            (sameDir === bestSameDir && (dist < bestDist || (dist === bestDist && e.id < best.id)))) {
-          best = e; bestDir = dir; bestDist = dist; bestSameDir = sameDir;
+        // HITBOX-AWARE TARGET SELECTION: PRE_ATTACK_TARGET_RADIUS(40)는 "후보를
+        // 찾는" 넓은 반경일 뿐, 실제로 검이 닿는 범위와는 다르다(칼 방향별 실제
+        // 사거리는 좌우 ~23.5px, 아래 ~19.5px, 위 ~27.5px로 이보다 좁다 — 위쪽이
+        // 더 넓은 건 getAttackHitbox() 의 cy 기준점이 발이 아니라 허리이기
+        // 때문). 이 필터가 없으면 "게임이 방향을 맞춰줬는데 칼이 안 닿는다"는
+        // 위화감이 생긴다 — 실제 히트박스(허리 기준, 기존 상수 그대로)와
+        // 겹치는 후보만 남긴다. 공격 상태를 전혀 만들지 않는 순수 기하 계산
+        // (MG.Combat.computeHitboxGeometry())만 쓴다.
+        if (!MG.Combat || !MG.Combat.computeHitboxGeometry) continue;
+        var box = MG.Combat.computeHitboxGeometry(px, py, dir);
+        var hurt = this.getHurtbox(e);
+        if (!MG.Collision.overlaps(box.x, box.y, box.w, box.h, hurt.x, hurt.y, hurt.w, hurt.h)) continue; // 닿지 않는다
+
+        // COMBAT FEEL ADJUSTMENT: 하드 티어 대신 거리 점수로 순위를 매긴다 —
+        // 인접 방향 후보에게만 ADJACENT_DIR_PENALTY 만큼 "가상으로 더 멀게"
+        // 취급해, 거리가 비슷할 땐 같은 방향이 이기지만 인접 방향 쪽이
+        // 그 페널티보다 확실히 더 가까우면 역전되게 한다.
+        var score = dist + (sameDir ? 0 : ADJACENT_DIR_PENALTY);
+
+        if (best === null || score < bestScore ||
+            (score === bestScore && e.id < best.id)) {
+          best = e; bestDir = dir; bestScore = score;
         }
       }
 
