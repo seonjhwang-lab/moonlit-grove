@@ -27,8 +27,17 @@
   // 쿨다운 등 기존 타이밍 코드를 손대지 않고도 "거의 정지"처럼 보인다.
   var HITSTOP_SCALE = 0.06;
 
+  /* PHASE 8.1: 정화(THE CLEANSING) 연출 상수.
+     파동은 화면(360x640)의 대각 절반(~367)보다 넉넉히 크게 퍼져 맵 위 남은
+     모슬링까지 닿는다. 게임을 멈추지 않고, 컷신도 없다 — 그냥 짧고 강한
+     한 번의 파동이다. */
+  var CLEANSE_DURATION = 1.0;      // 초 — 파동이 다 퍼지는 데 걸리는 시간
+  var CLEANSE_MAX_RADIUS = 560;    // 월드 픽셀 — 가장 먼 스폰 지점까지 덮는다
+  var CLEANSE_FLASH = 0.18;        // 초 — 활성화 순간의 짧은 화면 섬광
+  var ATMOSPHERE_FADE = 1.4;       // 초 — 숲이 밝아지는 데 걸리는 시간
+
   var Game = {
-    VERSION: '0.1.6',
+    VERSION: '0.1.8',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -43,6 +52,24 @@
     time: 0,              // 누적 경과 시간(초)
     frame: 0,
     hitStopT: 0,           // PHASE 6.1: 남은 히트스탑 시간(실시간 초)
+
+    /* PHASE 8: 첫 게임 목표(달의 돌) 진행 플래그. 퀘스트 프레임워크가 아니라
+       불린 하나다. 이번 세션 동안만 유지되며(로컬스토리지/서버 저장 없음),
+       사망/부활로는 절대 되돌아가지 않는다 — Player.respawn() 은 모슬링만
+       MG.Enemy.init() 으로 되돌리고 이 값은 건드리지 않기 때문이다. */
+    moonstoneFound: false,
+
+    /* PHASE 8.1-B: 숲이 정화되었는가. moonstoneFound 와 마찬가지로 이번
+       세션 동안만 유지되는 불린 하나이며, 사망/부활로 절대 되돌아가지
+       않는다(Player.respawn() 은 이 값을 건드리지 않는다). 저장 시스템 없음. */
+    cleansed: false,
+
+    // 정화 파동이 퍼지는 동안에만 존재하는 임시 상태 { t, x, y }
+    cleanse: null,
+
+    // 0 = 정화 전(어둡고 무겁게) → 1 = 정화 후(달빛이 든 것처럼 밝게)
+    atmosphere: 0,
+
     _lastTs: 0,
     _rafId: 0,
 
@@ -216,8 +243,101 @@
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
+      this.updateMoonstone(dt);
+      this.updateCleansing(dt);
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
+    },
+
+    /* PHASE 8: 달의 돌 — 오직 "실제 검 히트박스가 겹쳤을 때"만 활성화된다.
+       걸어서 부딪히거나, 공격 버튼만 누르거나, 근처에 있다는 것만으로는
+       절대 발동하지 않는다 — 기존 전투 규칙을 그대로 따르기 위해
+       MG.Combat.getAttackHitbox() 가 null 이 아닐 때(=판정 활성 구간)의
+       사각형만 본다. 사전 타겟팅(findPreAttackTarget)은 모슬링 목록만
+       훑으므로 달의 돌을 겨냥하는 일도 없다(설계상 그대로 둔다). */
+    updateMoonstone: function (dt) {
+      if (!MG.Map || !MG.Map.moonstone) return;
+      var m = MG.Map.moonstone;
+
+      if (m.state === 'ACTIVE') {
+        m.activeT += dt;   // 연출용 경과 시간일 뿐 — 게임 로직은 아니다
+        return;
+      }
+      if (this.moonstoneFound) return;          // 이미 끝난 목표 (이중 안전장치)
+      if (!MG.Player || MG.Player.state === 'DEAD') return;
+      if (!MG.Combat || !MG.Combat.getAttackHitbox || !MG.Collision) return;
+
+      var box = MG.Combat.getAttackHitbox(MG.Player);
+      if (!box) return;                          // 스윙 중이라도 판정 구간이 아니면 무시
+
+      var hit = MG.Map.getMoonstoneHitbox();
+      if (!MG.Collision.overlaps(box.x, box.y, box.w, box.h, hit.x, hit.y, hit.w, hit.h)) return;
+
+      this.activateMoonstone();
+    },
+
+    /* PHASE 8: 단 한 번만 실행되는 보상 시퀀스.
+       체력 회복 → 하트 UI 갱신 → 보상음 → 파티클 → 토스트.
+       플레이어의 위치/이동/사망 상태는 건드리지 않는다. */
+    activateMoonstone: function () {
+      if (this.moonstoneFound) return;
+      this.moonstoneFound = true;
+
+      var m = MG.Map.moonstone;
+      m.state = 'ACTIVE';
+      m.activeT = 0;
+
+      // A. 체력을 가득 채우고 하트를 즉시 갱신한다 (회복 아이템이 아니라 즉시 보상)
+      if (MG.Player) {
+        MG.Player.hp = MG.Player.maxHp;
+        if (MG.UI && MG.UI.renderHearts) MG.UI.renderHearts(MG.Player.hp, MG.Player.maxHp);
+      }
+
+      // B. 보상음 (오디오 실패가 게임을 막지 않는다 — audio.js 내부에서 try/catch)
+      if (MG.Audio && MG.Audio.playReward) MG.Audio.playReward();
+
+      // C. 돌을 중심으로 짧고 밝은 빛 폭발 (기존 파티클 시스템 재사용)
+      if (MG.Enemy && MG.Enemy.spawnParticles) {
+        MG.Enemy.spawnParticles(m.x, m.y - 4, 18, 0, -1, 'reward');
+      }
+
+      // D. 임시 토스트 — 퀘스트 로그가 아니라 잠깐 떴다 사라지는 알림
+      if (MG.UI && MG.UI.showToast) MG.UI.showToast('달의 돌을 발견했다');
+
+      // E. PHASE 8.1: 그리고 숲 전체가 정화된다 — 이 게임의 결말.
+      this.startCleansing(m.x, m.y);
+    },
+
+    /* PHASE 8.1-B: 정화 시작. 게임을 멈추지 않고(컷신 없음) 아주 짧은
+       히트스탑만 걸어 "쿵" 하는 무게를 준다 — 기존 hitStop() 은 dt 배율만
+       낮출 뿐 입력을 막지 않으므로 조작권은 계속 플레이어에게 있다. */
+    startCleansing: function (x, y) {
+      if (this.cleansed) return;
+      this.cleansed = true;
+      this.cleanse = { t: 0, x: x, y: y };
+
+      this.hitStop(0.08);
+
+      if (MG.UI && MG.UI.showVictory) MG.UI.showVictory('숲이 정화되었다');
+    },
+
+    /* 파동을 퍼뜨리고(=닿는 순서대로 모슬링을 정화하고) 숲을 서서히 밝힌다. */
+    updateCleansing: function (dt) {
+      // 분위기 전환은 파동이 끝난 뒤에도 계속 이어진다
+      if (this.cleansed && this.atmosphere < 1) {
+        this.atmosphere = Math.min(1, this.atmosphere + dt / ATMOSPHERE_FADE);
+      }
+
+      var c = this.cleanse;
+      if (!c) return;
+
+      c.t += dt;
+      var radius = Math.min(1, c.t / CLEANSE_DURATION) * CLEANSE_MAX_RADIUS;
+
+      // 파동 앞면이 닿은 모슬링부터 차례로 사라진다 (enemy.js 의 기존 사망 연출)
+      if (MG.Enemy && MG.Enemy.cleanseAt) MG.Enemy.cleanseAt(c.x, c.y, radius);
+
+      if (c.t >= CLEANSE_DURATION) this.cleanse = null;
     },
 
     /* v0.1.1: DEBUG_MOBILE_LAYOUT 이 true 일 때만 동작하는 개발용 정보 패널.
@@ -283,13 +403,92 @@
 
       MG.Map.renderFireflies(ctx, cam, t);
 
+      // PHASE 8.1: 정화 파동은 월드 좌표에 그린다 (카메라 변환이 아직 살아있는
+      // 이 지점이어야 돌을 중심으로 정확히 퍼진다)
+      this.renderCleanseWave(ctx);
+
       // DEBUG_COMBAT 이 true 일 때만 그려진다 (combat.js 내부에서 조기 반환) —
       // 카메라 변환이 아직 적용된 상태여야 히트박스가 월드 좌표와 정확히 겹친다.
       if (MG.Combat && MG.Combat.renderDebug) MG.Combat.renderDebug(ctx, MG.Player);
 
       ctx.restore();
 
+      this.drawAtmosphere(ctx);   // PHASE 8.1-C: 정화 전/후 공기감
       this.drawVignette(ctx);
+      this.drawCleanseFlash(ctx); // 활성화 순간의 아주 짧은 섬광 (맨 위)
+    },
+
+    /* PHASE 8.1: 달의 돌에서 퍼져나가는 정화 파동. 새 파티클 엔진이 아니라
+       캔버스 원 두어 개다 — 안쪽은 옅게 채워 "지나간 자리"를, 앞면은 또렷한
+       테두리로 "지금 지나가는 곳"을 보여준다. 세로 화면에서도 한눈에 읽힌다. */
+    renderCleanseWave: function (ctx) {
+      var c = this.cleanse;
+      if (!c) return;
+
+      var p = Math.min(1, c.t / CLEANSE_DURATION);
+      var r = p * CLEANSE_MAX_RADIUS;
+      var fade = 1 - p;                 // 퍼질수록 옅어진다
+      if (r <= 1) return;
+
+      ctx.save();
+
+      // 파동이 훑고 지나간 안쪽 — 은은한 달빛이 남는다
+      var inner = Math.max(0, r - 52);
+      var g = ctx.createRadialGradient(c.x, c.y, inner, c.x, c.y, r);
+      g.addColorStop(0, 'rgba(190, 226, 255, 0)');
+      g.addColorStop(0.72, 'rgba(202, 232, 255, ' + (0.16 * fade).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(238, 249, 255, ' + (0.36 * fade).toFixed(3) + ')');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 파동 앞면 — 두꺼운 테두리 + 안쪽에 가는 흰 선을 겹쳐 속도감을 준다
+      ctx.strokeStyle = 'rgba(226, 244, 255, ' + (0.85 * fade).toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.55 * fade).toFixed(3) + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, Math.max(1, r - 6), 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    },
+
+    /* 활성화 직후 아주 짧게 화면 전체를 밝히는 섬광 (0.18초). 게임을 멈추지
+       않으며, 알파가 낮아 눈이 부시지 않는다. */
+    drawCleanseFlash: function (ctx) {
+      var c = this.cleanse;
+      if (!c || c.t > CLEANSE_FLASH) return;
+      var a = (1 - c.t / CLEANSE_FLASH) * 0.30;
+      ctx.fillStyle = 'rgba(226, 242, 255, ' + a.toFixed(3) + ')';
+      ctx.fillRect(0, 0, INTERNAL_W, INTERNAL_H);
+    },
+
+    /* PHASE 8.1-C: 정화 전/후의 공기감 대비.
+       색을 통째로 바꾸지 않고 아주 얇은 레이어 하나만 덮는다 —
+       정화 전에는 차갑게 눌러 무겁게, 정화 후에는 달빛으로 살짝 들어올린다. */
+    drawAtmosphere: function (ctx) {
+      var W = INTERNAL_W, H = INTERNAL_H;
+      var a = this.atmosphere;
+
+      if (a < 0.999) {
+        // 정화 전 — 푸른기 도는 어둠으로 살짝 가라앉힌다
+        ctx.fillStyle = 'rgba(6, 14, 24, ' + (0.18 * (1 - a)).toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (a > 0.001) {
+        // 정화 후 — 위에서 달빛이 스며든 것처럼 옅게 밝힌다
+        var lift = ctx.createLinearGradient(0, 0, 0, H);
+        lift.addColorStop(0, 'rgba(186, 216, 255, ' + (0.15 * a).toFixed(3) + ')');
+        lift.addColorStop(1, 'rgba(186, 216, 255, ' + (0.05 * a).toFixed(3) + ')');
+        ctx.fillStyle = lift;
+        ctx.fillRect(0, 0, W, H);
+      }
     },
 
     /* PHASE 4에서 실제 숲 맵(map.js)으로 교체될 임시 분위기 배경.
@@ -332,12 +531,19 @@
       }
     },
 
-    /* 화면 가장자리 비네트 — 배경/플레이어 위에 항상 마지막으로 덮는다 */
+    /* 화면 가장자리 비네트 — 배경/플레이어 위에 항상 마지막으로 덮는다.
+       PHASE 8.1-C: 정화 전에는 더 좁고 짙게(압박감), 정화 후에는 더 넓고
+       옅게(트인 느낌) 바뀐다. atmosphere 가 0→1 로 서서히 움직이므로
+       전환도 뚝 끊기지 않고 자연스럽게 이어진다. */
     drawVignette: function (ctx) {
       var W = INTERNAL_W, H = INTERNAL_H;
-      var vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+      var a = this.atmosphere;
+      var inner = H * (0.30 + 0.14 * a);   // 0.30 → 0.44 (밝아질수록 가장자리만 남는다)
+      var edge = 0.68 - 0.34 * a;          // 0.68 → 0.34
+
+      var vig = ctx.createRadialGradient(W / 2, H / 2, inner, W / 2, H / 2, H * 0.95);
       vig.addColorStop(0, 'rgba(0,0,0,0)');
-      vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+      vig.addColorStop(1, 'rgba(0,0,0,' + edge.toFixed(3) + ')');
       ctx.fillStyle = vig;
       ctx.fillRect(0, 0, W, H);
     }

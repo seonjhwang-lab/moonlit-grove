@@ -147,6 +147,59 @@
       }
     },
 
+    /* PHASE 8: 달의 돌 활성화 보상음 — 지금까지의 효과음(짧은 타격/둔탁한 접촉)과
+       완전히 구분되는, 밝고 울림 있는 상승 아르페지오. 다섯 번째 음까지 차례로
+       쌓아 "해냈다"는 신호를 준다. 다른 소리보다 길지만(약 1초) 게임 진행을
+       막지 않으며, 오디오가 실패해도 조용히 넘어간다. */
+    playReward: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        // C5 - E5 - G5 - C6 (밝은 장3화음 + 옥타브) — 차례로 겹쳐 울린다
+        var notes = [523.25, 659.25, 783.99, 1046.50];
+        for (var i = 0; i < notes.length; i++) {
+          var start = now + i * 0.09;
+
+          var osc = ctx.createOscillator();
+          osc.type = 'triangle';                    // 사각파보다 부드럽고 종소리에 가깝다
+          osc.frequency.setValueAtTime(notes[i], start);
+
+          var gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.20, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.75);
+
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.8);
+        }
+
+        // 맨 위에 얹는 짧은 반짝임 — 노이즈를 높게 깎아 "샤랑" 하는 결을 준다
+        if (this._noiseBuffer) {
+          var shimmer = ctx.createBufferSource();
+          shimmer.buffer = this._noiseBuffer;
+
+          var hp = ctx.createBiquadFilter();
+          hp.type = 'highpass';
+          hp.frequency.setValueAtTime(2600, now);
+          hp.frequency.exponentialRampToValueAtTime(6000, now + 0.5);
+
+          var sGain = ctx.createGain();
+          sGain.gain.setValueAtTime(0.0001, now);
+          sGain.gain.exponentialRampToValueAtTime(0.10, now + 0.06);
+          sGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+
+          shimmer.connect(hp).connect(sGain).connect(ctx.destination);
+          shimmer.start(now);
+          shimmer.stop(now + 0.62);
+        }
+      } catch (e) {
+        // 무음으로 넘어간다 — 오디오 실패가 게임플레이를 막지 않는다
+      }
+    },
+
     /* PHASE 6.2: 모슬링 돌진이 플레이어에 닿았을 때 — 검 타격음(사각파, 밝고 높음)
        이나 처치음(노이즈, 길게 잦아듦)과는 확실히 다른, 둔탁하고 낮은 "퍽" 톤을
        사인파로 만든다. 데미지가 아니라 "닿았다"는 신호일 뿐이라 자극적이지 않게. */

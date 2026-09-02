@@ -48,6 +48,27 @@
     [868, 738], [402, 452], [1216, 742], [1332, 520], [126, 330]
   ];
 
+  /* PHASE 8: 달의 돌(MOONSTONE) — 게임의 첫 목표.
+     자리는 GLADES 의 "숲 탐험 중간 공터"(700,400) 정중앙이다. 이 공터는
+     buildProps() 가 나무를 아예 심지 않는 반경이고, 가장 가까운 바위는
+     (742,512)로 110px 넘게 떨어져 있으며, 강(x 1000~1130)과도 무관하다 —
+     즉 지형을 하나도 바꾸지 않고 그대로 놓을 수 있다. 스폰(200,590)에서
+     PATH_MAIN → PATH_BRANCH 갈림길을 타고 자연스럽게 도달한다.
+     좌표 규약은 나무/바위와 같다: (x, y)는 "땅에 닿는 발치" 기준이다. */
+  var MOONSTONE_X = 700;
+  var MOONSTONE_Y = 400;
+
+  // 충돌 상자 — 걸어서 통과하지는 못하되, 검이 닿기 쉽도록 작게 잡는다
+  // (큰 투명 벽이 되지 않도록 발치 주변만 막는다).
+  var MOONSTONE_SOLID_W = 16;
+  var MOONSTONE_SOLID_H = 9;
+
+  // 검 상호작용 상자 — 모슬링의 getHurtbox() 와 같은 개념(발치 충돌과 별개로
+  // "몸통"을 덮는다). 결정 자체가 차지하는 높이를 넉넉히 감싸, 네 방향
+  // 어디서 휘둘러도 기존 검 히트박스(허리 높이 기준)와 정상적으로 겹친다.
+  var MOONSTONE_HIT_W = 16;
+  var MOONSTONE_HIT_H = 18;
+
   var PALETTE = {
     grassDark:  '#17351f',
     grassMid:   '#1e4527',
@@ -104,6 +125,12 @@
     fireflies: [],
     solids: [],          // 충돌 사각형 {x, y, w, h} (좌상단 기준)
     ground: null,        // 미리 구워둔 지면 캔버스
+
+    /* PHASE 8: 달의 돌. state 는 'IDLE' | 'ACTIVE' 두 가지뿐이고,
+       진행 플래그(MG.Game.moonstoneFound)와 짝을 이룬다. 여기(Map)는 좌표와
+       충돌/렌더 데이터만 들고, "언제 활성화되는가"는 game.js 가 판단한다.
+       activeT 는 활성화 이후 연출용 경과 시간(초)일 뿐 게임 로직이 아니다. */
+    moonstone: { x: MOONSTONE_X, y: MOONSTONE_Y, state: 'IDLE', activeT: 0 },
 
     /* 플레이어 시작 위치 (player.js 가 참조) */
     spawn: { x: 200, y: 590 },
@@ -177,6 +204,22 @@
           speed: 0.5 + rng() * 0.8
         });
       }
+
+      /* PHASE 8: 달의 돌 주변에만 반딧불을 의도적으로 조금 모아 둔다.
+         미니맵/퀘스트 화살표 같은 UI 를 붙이지 않고, 이미 숲 전체에 있는
+         연출 요소를 그대로 써서 "저기 뭔가 있다"를 자연스럽게 흘린다.
+         (같은 fireflies 배열에 넣으므로 렌더/컬링 경로도 기존 그대로다) */
+      var m = this.moonstone;
+      for (var j = 0; j < 14; j++) {
+        var ang = rng() * Math.PI * 2;
+        var rad = 14 + rng() * 34;   // 돌에 너무 붙지도, 흩어지지도 않게
+        this.fireflies.push({
+          x: m.x + Math.cos(ang) * rad,
+          y: m.y + Math.sin(ang) * rad * 0.7,   // 살짝 납작하게 — 바닥에 깔린 느낌
+          phase: rng() * Math.PI * 2,
+          speed: 0.4 + rng() * 0.5
+        });
+      }
     },
 
     /* --------------------------------------------------------- 충돌 데이터 */
@@ -207,7 +250,33 @@
         s.push({ x: k.x - rw / 2, y: k.y - 7, w: rw, h: 10 });
       }
 
+      // PHASE 8: 달의 돌 — 걸어서 통과하지 못하게 발치만 막는다.
+      // (기존 충돌 배열에 사각형 하나를 더할 뿐, 새 물리 구조는 없다.
+      //  main.js 순서상 Map.init() 이 Enemy.init() 보다 먼저 돌기 때문에,
+      //  같은 자리(700,400)의 모슬링 스폰 지점은 enemy.js 의 기존
+      //  findClearSpot() 이 이 solid 를 보고 알아서 옆으로 밀어낸다.)
+      var m = this.moonstone;
+      s.push({
+        x: m.x - MOONSTONE_SOLID_W / 2,
+        y: m.y - MOONSTONE_SOLID_H,
+        w: MOONSTONE_SOLID_W,
+        h: MOONSTONE_SOLID_H
+      });
+
       this.solids = s;
+    },
+
+    /* PHASE 8: 검 판정용 상호작용 상자 (월드 좌표).
+       enemy.js 의 getHurtbox() 와 같은 규약이라 game.js 가 기존
+       MG.Collision.overlaps() 로 그대로 비교할 수 있다. */
+    getMoonstoneHitbox: function () {
+      var m = this.moonstone;
+      return {
+        x: m.x - MOONSTONE_HIT_W / 2,
+        y: m.y - MOONSTONE_HIT_H,
+        w: MOONSTONE_HIT_W,
+        h: MOONSTONE_HIT_H
+      };
     },
 
     /* --------------------------------------------------- 지면 굽기 (1회) */
@@ -384,12 +453,156 @@
         if (o.y < cam.y - 40 || o.y > cam.y + cam.h + 40) continue;
         out.push({ y: o.y, obj: o, kind: 'rock' });
       }
+
+      // PHASE 8: 달의 돌도 나무/바위와 같은 y 정렬 대상에 넣는다 —
+      // 그래야 플레이어가 돌 앞/뒤로 지나갈 때 앞뒤 관계가 자연스럽다.
+      o = this.moonstone;
+      if (o.x >= cam.x - 40 && o.x <= cam.x + cam.w + 40 &&
+          o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
+        out.push({ y: o.y, obj: o, kind: 'moonstone' });
+      }
       return out;
     },
 
     renderProp: function (ctx, entry) {
       if (entry.kind === 'tree') this.drawTree(ctx, entry.obj);
       else if (entry.kind === 'rock') this.drawRock(ctx, entry.obj);
+      else if (entry.kind === 'moonstone') this.drawMoonstone(ctx, entry.obj);
+    },
+
+    /* PHASE 8: 달의 돌 — 나무(둥근 초록 캐노피)/바위(각진 회색)와 확실히
+       구분되도록 창백한 달빛색 결정으로 그린다. 절차적 픽셀 아트만 쓰고
+       외부 스프라이트는 없다 (프로젝트 전체 규약 그대로).
+         IDLE   — 은은하게 맥동하는 푸른 빛. "아직 건드리지 않은 것".
+         ACTIVE — 맥동이 잦아들고 밝고 안정된 빛 + 완성을 알리는 고리.
+                  화면을 덮는 UI 로 바꾸지 않고 월드에 계속 남는다. */
+    drawMoonstone: function (ctx, m) {
+      var t = (MG.Game && MG.Game.time) || 0;
+      var active = m.state === 'ACTIVE';
+
+      /* PHASE 8.1: IDLE 맥동을 더 눈에 띄게 다듬었다 — 화면 중앙에 오기
+         전에도 "저기 뭔가 빛난다"가 읽혀야 하기 때문이다. 다만 번쩍이지
+         않도록 주기는 오히려 느리게(2.4 → 1.7) 하고, 대신 진폭(빛무리 크기와
+         밝기)을 키워 "천천히 숨쉬는" 느낌으로 만든다.
+         ACTIVE 는 그대로 거의 일정하게 — 이미 끝난 것은 재촉하지 않는다. */
+      var pulse = active
+        ? 0.86 + 0.14 * Math.sin(t * 1.6)
+        : 0.50 + 0.50 * Math.sin(t * 1.7);
+
+      var cx = m.x;
+      var baseY = m.y;
+      var topY = baseY - 17;          // 결정 꼭대기
+      var midY = baseY - 10;          // 결정 허리 (가장 넓은 지점)
+
+      // 바닥 그림자
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.30)';
+      ctx.beginPath();
+      ctx.ellipse(Math.round(cx), Math.round(baseY + 1), 8, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 바닥에 번지는 빛무리 (지면을 물들이는 느낌).
+      // PHASE 8.1: IDLE 일 때 반경 자체가 16~32 로 숨쉬어, 멀리서도 눈에 띈다.
+      var glowR = active ? 26 : (16 + 16 * pulse);
+      var glowA = active ? (0.34 * pulse) : (0.14 + 0.22 * pulse);
+      var groundGlow = ctx.createRadialGradient(cx, baseY - 4, 0, cx, baseY - 4, glowR);
+      groundGlow.addColorStop(0, 'rgba(180, 224, 255, ' + glowA.toFixed(3) + ')');
+      groundGlow.addColorStop(1, 'rgba(180, 224, 255, 0)');
+      ctx.fillStyle = groundGlow;
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY - 4, glowR, glowR * 0.62, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 결정을 받치는 작은 돌받침 (풀밭에 떠 있어 보이지 않게)
+      ctx.fillStyle = '#4c5666';
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, baseY);
+      ctx.lineTo(cx - 5, baseY - 4);
+      ctx.lineTo(cx + 5, baseY - 4);
+      ctx.lineTo(cx + 7, baseY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#626e80';
+      ctx.fillRect(Math.round(cx - 5), Math.round(baseY - 4), 10, 1);
+
+      // 결정 본체 — 위아래로 뾰족한 육각 실루엣
+      var bodyDark  = active ? '#6f9fd8' : '#4d6f9c';
+      var bodyMid   = active ? '#a9d4ff' : '#7ea6d4';
+      var bodyLight = active ? '#ecf7ff' : '#c2dcf7';
+
+      ctx.fillStyle = bodyDark;
+      ctx.beginPath();
+      ctx.moveTo(cx,     topY);
+      ctx.lineTo(cx + 6, midY);
+      ctx.lineTo(cx + 4, baseY - 4);
+      ctx.lineTo(cx - 4, baseY - 4);
+      ctx.lineTo(cx - 6, midY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 왼쪽 면(밝은 쪽) — 달빛을 받는 각
+      ctx.fillStyle = bodyMid;
+      ctx.beginPath();
+      ctx.moveTo(cx,     topY);
+      ctx.lineTo(cx,     baseY - 4);
+      ctx.lineTo(cx - 4, baseY - 4);
+      ctx.lineTo(cx - 6, midY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 하이라이트 결
+      ctx.fillStyle = bodyLight;
+      ctx.beginPath();
+      ctx.moveTo(cx - 1, topY + 2);
+      ctx.lineTo(cx - 1, midY + 3);
+      ctx.lineTo(cx - 4, midY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 결정 내부의 빛 — 맥동하는 심지
+      ctx.save();
+      ctx.globalAlpha = active ? (0.55 + 0.35 * pulse) : (0.30 + 0.45 * pulse);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(cx - 1), Math.round(midY - 2), 2, 6);
+      ctx.restore();
+
+      if (active) {
+        // 완성을 알리는 고리 — 천천히 숨쉬는 안정된 빛
+        ctx.save();
+        ctx.globalAlpha = 0.30 + 0.20 * Math.sin(t * 1.3);
+        ctx.strokeStyle = '#dff0ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, baseY - 9, 12, 7, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // 주변을 도는 작은 빛알갱이 세 개 (활성 상태를 멀리서도 읽히게)
+        for (var i = 0; i < 3; i++) {
+          var a = t * 1.1 + (i / 3) * Math.PI * 2;
+          var ox = cx + Math.cos(a) * 12;
+          var oy = (baseY - 9) + Math.sin(a) * 6;
+          ctx.fillStyle = 'rgba(226, 243, 255, ' + (0.5 + 0.4 * Math.sin(t * 3 + i)).toFixed(2) + ')';
+          ctx.fillRect(Math.round(ox), Math.round(oy), 1, 1);
+        }
+      } else {
+        // IDLE — 숨쉬는 바깥 후광. 빛무리(바닥)와 다른 높이에 한 겹 더 있어
+        // 결정이 화면 가장자리에 걸쳐 있을 때도 존재가 읽힌다.
+        ctx.save();
+        ctx.globalAlpha = 0.10 + 0.22 * pulse;
+        ctx.strokeStyle = '#cfe4ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, baseY - 10, 9 + 5 * pulse, 6 + 3 * pulse, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // 꼭대기에서 반짝 튀는 작은 섬광 (주기적으로만)
+        var sparkle = Math.sin(t * 2.4);
+        if (sparkle > 0.86) {
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + ((sparkle - 0.86) / 0.14).toFixed(2) + ')';
+          ctx.fillRect(Math.round(cx), Math.round(topY - 2), 1, 1);
+        }
+      }
     },
 
     drawTree: function (ctx, t) {

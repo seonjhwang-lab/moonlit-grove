@@ -20,6 +20,8 @@
       this.el.startBtn = document.getElementById('btn-start');
       this.el.version = document.getElementById('hud-version');
       this.el.hearts = document.getElementById('hud-hearts');
+      this.el.toast = document.getElementById('hud-toast');     // PHASE 8
+      this.el.victory = document.getElementById('hud-victory'); // PHASE 8.1
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -104,6 +106,70 @@
       for (var i = 0; i < maxHp; i++) str += (i < full) ? '❤️' : '🤍';
 
       if (this.el.hearts.textContent !== str) this.el.hearts.textContent = str;
+    },
+
+    /* PHASE 8: 잠깐 떴다 저절로 사라지는 알림. 퀘스트 로그도, 상시 목표
+       패널도 아니다 — 문자열 하나를 넣고 CSS 트랜지션으로 페이드인/아웃만
+       한다. pointer-events 는 style.css 에서 none 이라 조작을 절대 가리지
+       않는다. 연속 호출되면 이전 타이머를 지우고 새로 시작한다. */
+    showToast: function (text, holdMs) {
+      if (!this.el.toast) this.el.toast = document.getElementById('hud-toast');
+      if (!this.el.toast) return;
+
+      var el = this.el.toast;
+      var self = this;
+
+      if (this._toastHold) global.clearTimeout(this._toastHold);
+      if (this._toastHide) global.clearTimeout(this._toastHide);
+
+      el.textContent = text;
+      el.hidden = false;
+      // 숨김 상태에서 바로 클래스를 붙이면 트랜지션이 생략되는 브라우저가 있어
+      // 레이아웃을 한 번 강제로 확정시킨 뒤 보이게 한다.
+      void el.offsetWidth;
+      el.classList.add('is-visible');
+
+      var hold = holdMs || 2200;   // 페이드(0.35s) + 유지 + 페이드(0.4s) ≈ 3초
+      this._toastHold = global.setTimeout(function () {
+        el.classList.remove('is-visible');
+        self._toastHide = global.setTimeout(function () { el.hidden = true; }, 400);
+      }, hold);
+    },
+
+    /* PHASE 8.1: 완료 문구. 별도 메뉴/화면이 아니라 기존 HUD 위에 얹는 텍스트
+       한 줄이며, pointer-events: none 이라 조작(조이스틱/공격 버튼)을 절대
+       가리지 않는다.
+       PHASE 8.1 폴리시: 예전에는 화면에 영구히 남았지만, 이제 토스트와 같은
+       방식으로 스스로 사라진다 — 부드럽게 나타나 약 2.7초간 또렷하게 머문 뒤
+       0.7초에 걸쳐 사라지고 hidden 으로 완전히 빠진다.
+       중요: 이건 순수하게 DOM/표시 문제다. 여기서 MG.Game.cleansed / 달의 돌
+       상태 / 밝아진 분위기 / 비네트 / 정리된 적 등 정화 상태는 절대 건드리지
+       않는다 — 글자만 사라지고 세계는 그대로 정화된 채 남는다. */
+    showVictory: function (text, holdMs) {
+      if (!this.el.victory) this.el.victory = document.getElementById('hud-victory');
+      if (!this.el.victory) return;
+
+      var el = this.el.victory;
+      var self = this;
+
+      // 반복 호출돼도 이전 타이머가 겹쳐 "보이는 채로 멈추는" 일이 없도록 정리한다
+      if (this._victoryHold) global.clearTimeout(this._victoryHold);
+      if (this._victoryHide) global.clearTimeout(this._victoryHide);
+
+      el.textContent = text;
+      el.hidden = false;
+      void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록
+      el.classList.add('is-visible');
+
+      // style.css 의 transition 과 맞춘 값 (페이드 0.7초)
+      var FADE = 700;
+      var hold = holdMs || 2700;    // 완전히 또렷한 상태로 머무는 시간
+      this._victoryHold = global.setTimeout(function () {
+        el.classList.remove('is-visible');                       // 0.7초 페이드아웃 시작
+        self._victoryHide = global.setTimeout(function () {
+          el.hidden = true;                                      // 완전히 사라진다
+        }, FADE + 50);
+      }, FADE + hold);              // 페이드인이 끝난 뒤부터 유지 시간을 센다
     }
   };
 

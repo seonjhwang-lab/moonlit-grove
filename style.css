@@ -110,6 +110,85 @@ html, body {
 .hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
 
 /* --------------------------------------------------------------------------
+   토스트 (PHASE 8) — 잠깐 떴다 사라지는 알림.
+   세로 화면 상단 1/4 지점에 놓아 하트(맨 위)와도, 조이스틱(하단 45%)/
+   공격 버튼(우하단)과도 겹치지 않는다. pointer-events: none 이라 조작을
+   가로채지 않는다.
+   -------------------------------------------------------------------------- */
+
+.hud-toast {
+  position: absolute;
+  left: 50%;
+  /* PHASE 8.1: 정화 순간에는 완료 문구(#hud-victory, 위쪽 11%)와 토스트가
+     동시에 뜬다. 서로 겹치지 않도록 토스트를 조금 더 아래로 내렸다.
+     (아래로 더 내리면 조이스틱 영역(화면 하단 45%)에 닿으므로 30% 가 한계) */
+  top: 30%;
+  transform: translate(-50%, -6px);
+  max-width: 78%;
+  padding: 0.55em 1.15em;
+  font-family: var(--mg-font-display);
+  font-size: clamp(13px, 2.7vh, 21px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--mg-moon);
+  background: var(--mg-panel);
+  border: 1px solid rgba(207, 228, 255, 0.45);
+  border-radius: 8px;
+  box-shadow: 0 0 18px rgba(120, 180, 255, 0.28),
+              0 4px 0 rgba(0, 0, 0, 0.4);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: 20;
+
+  opacity: 0;
+  transition: opacity 350ms ease, transform 350ms ease;
+}
+.hud-toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.hud-toast[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
+   완료 문구 (PHASE 8.1) — 정화가 끝나면 떠서 계속 남는다.
+   토스트보다 위(12%)에 두어 서로 겹치지 않고, 하단의 조이스틱(아래 45%)/
+   공격 버튼(우하단)과도 완전히 떨어져 있다. pointer-events: none.
+   -------------------------------------------------------------------------- */
+
+.hud-victory {
+  position: absolute;
+  left: 50%;
+  top: 11%;
+  transform: translate(-50%, -8px);
+  max-width: 92%;
+  text-align: center;
+  /* 두 줄로 접히면 아래 토스트와 겹치므로 항상 한 줄로 유지한다 */
+  white-space: nowrap;
+  font-family: var(--mg-font-display);
+  font-size: clamp(16px, 3.2vh, 26px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--mg-moon);
+  text-shadow: 0 0 20px rgba(150, 200, 255, 0.55),
+               0 3px 0 rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 15;
+
+  opacity: 0;
+  /* PHASE 8.1 폴리시: 나타날 때도 사라질 때도 같은 0.7초 페이드를 쓴다
+     (사라지는 시간 0.6~0.8초 요구에 맞춘 값이며, 나타날 때도 충분히 부드럽다).
+     ui.js 의 showVictory() 안 FADE 값과 반드시 같이 움직여야 한다. */
+  transition: opacity 700ms ease, transform 700ms ease;
+}
+.hud-victory.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.hud-victory[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
    오버레이 (타이틀 / 대화 / 결과 등 공통)
    -------------------------------------------------------------------------- */
 

@@ -8,12 +8,65 @@ Project:
 
 Current Version:
 
-v0.1.5
+v0.1.8
 
 Current Phase:
 
-Phase 6.2 — Combat Readability & Threat Feedback — **COMPLETE** (implemented
-and verified by Claude Code, refining 6.1 based on further player feedback)
+Phase 8.1 — The Cleansing (complete micro-adventure loop) — **COMPLETE**
+(implemented and verified by Claude Code)
+
+Implemented (Phase 8.1):
+
+* **Moonstone Guard (8.1-A)** — 4 of the *existing* 9 spawn spots were moved
+  into a diagonal ring around the stone (51–58px out, ≥66px apart, all inside
+  the existing glade). No new enemy type, no new AI, no dynamic spawning —
+  only position plus a tighter per-enemy leash (`wanderLeash` 46→20,
+  `homeLeash` 260→120). Speed, damage, lunge and knockback are untouched.
+* **The Cleansing (8.1-B)** — `MG.Game.cleansed`, a wave that expands from the
+  stone over 1.0s dissolving Mosslings *in the order the front reaches them*
+  (guards at ~0.1s, distant roamers at 0.6–0.9s) using the existing `DEAD`
+  state and `moss`/`reward` particles. `Enemy.init()` returns early once
+  cleansed, so respawn never repopulates.
+* **Atmosphere contrast (8.1-C)** — `Game.atmosphere` eases 0→1 over 1.4s;
+  vignette 0.68→0.34 and a thin cool/moonlight overlay swap. Measured:
+  average screen luminance 42.5 → 68.1, vignette corner 32.2 → 68.9.
+* **Closure** — `#hud-victory` ("숲이 정화되었다"), `pointer-events: none`, one
+  line, 92px clear of the toast and far from both thumb zones. It was
+  originally permanent; a follow-up polish pass made it self-dismiss —
+  0.7s fade in → 2.7s fully readable → 0.7s fade out → `hidden`
+  (~4.1s total). That is purely a DOM/visual change: `MG.Game.cleansed`,
+  the Moonstone's ACTIVE state, the brightened atmosphere/vignette and the
+  cleared enemy list are all untouched when the text goes away, and the
+  `FADE` constant in `UI.showVictory()` must stay in sync with the 700ms
+  `transition` on `.hud-victory` in style.css.
+
+> Note: this header block had been left at v0.1.5 / Phase 6.2 while the
+> v0.1.6 polish passes only updated `VERSION HISTORY` and `HANDOFF STATUS`
+> below. It is now current again — keep all three in sync going forward.
+
+Implemented (Phase 8):
+
+* **The Moonstone** — the game's first real objective, at (700, 400) in the
+  existing middle clearing. No terrain was moved: that spot is inside the
+  pre-existing `GLADES` entry `[700, 400, 112]` (so `buildProps()` plants no
+  trees there), the nearest rock is 119.6px away, the nearest tree 125.1px,
+  and the river is far off. Reachability from spawn (200, 590) was *proved*
+  by BFS over the real collision data, not assumed.
+* **Sword-only activation** — `MG.Game.updateMoonstone()` consumes the
+  existing `MG.Combat.getAttackHitbox()` (null outside the active window) and
+  `MG.Collision.overlaps()`. Walking into it, merely pressing attack, or
+  standing nearby never activate it. No second attack system.
+* **One-time reward** — full heal + hearts refresh, `MG.Audio.playReward()`,
+  a moonlight particle burst (reusing the existing particle array with a new
+  `'reward'` type), and a temporary `#hud-toast`.
+* **Two visual states** — IDLE pulses softly; ACTIVE settles into a steadier,
+  brighter glow with a completion ring and three orbiting motes. Verified by
+  pixel sampling, not eyeballing (see VERSION HISTORY below).
+
+Not implemented (deliberately out of scope):
+
+* No quest framework, item system, generic interactable framework, inventory,
+  save system (localStorage/server), minimap, quest arrow, or compass.
 
 Implemented (Phase 6.2):
 
@@ -774,13 +827,87 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 7 + forgiving-hitbox + soft-attack-assist (0.24s hold + render-split
-fix) + pre-attack targeting (strengthened, see below), v0.1.6 — done,
-stable. Not yet committed to git this pass (verified locally; a commit
-was intentionally not made — see git status/diff in the completion
-report). Next task is Phase 8 (not yet specified — no healing items/
-inventory/game-over menu/quests/bosses/full-auto-aim implemented per
-explicit scope exclusions across all passes so far).
+Phase 8.1 (The Cleansing), v0.1.8 — done, stable. Not yet committed to
+git this pass (verified locally; a commit was intentionally not made —
+see git status/diff in the completion report). Next task is Phase 9
+(모스키 동료 영입, per GAME_DESIGN.md) — not started.
+
+### v0.1.8 — PHASE 8.1: 정화 (완결된 마이크로 어드벤처)
+
+Turns the Phase 8 objective into a full loop: explore → guarded clearing →
+activate → cleansing wave → brighter forest → closure. Two design notes
+worth keeping in mind before editing this again:
+
+1. **Difficulty comes from placement, never from numbers.** The guards use
+   exactly the same `CHASE_SPEED`/damage/lunge constants as every other
+   Mossling; only `wanderLeash`/`homeLeash` differ (per-enemy, defaulting
+   to the old globals so untouched enemies behave identically). Measured:
+   guards drift at most 68px from the stone over 20s, and a player who
+   simply stands in the clearing drops 5→1 HP in 7s — dangerous but
+   survivable, and retreating works because the guards leash back.
+2. **The wave is a renderer, not a system.** `renderCleanseWave()` is two
+   arcs plus a radial gradient drawn inside the existing camera transform;
+   dissolving reuses the existing `DEAD` state so `updateDead()` and the
+   existing list-removal handle cleanup. Nothing new was added to the
+   particle engine beyond the `'reward'` type already introduced in 8.0.
+
+Verification notes: wave visibility was measured differentially (same frame
+rendered with and without the wave) rather than by an absolute brightness
+threshold — an initial check using a fixed threshold wrongly reported the
+wave invisible because it draws semi-transparently over a dark forest; the
+differential test shows it changes 46.6% of screen pixels. The victory line
+also initially wrapped to two lines and collided with the toast; fixed with
+`white-space: nowrap` plus moving the toast 22%→30%.
+
+### v0.1.7 — PHASE 8: 달의 돌 (첫 게임 목표)
+
+The game's first actual objective. New in `js/map.js`: `Map.moonstone`
+(`{x:700, y:400, state:'IDLE'|'ACTIVE', activeT}`), a 16×9 collision solid
+pushed into the existing `solids` array, `getMoonstoneHitbox()` (16×18,
+same convention as `Enemy.getHurtbox()`), `drawMoonstone()`, a 14-firefly
+cluster around the stone, and a `'moonstone'` entry in the existing
+y-sorted `collectProps()`/`renderProp()` path. New in `js/game.js`:
+`moonstoneFound` (one boolean, not a quest framework),
+`updateMoonstone(dt)` and `activateMoonstone()`. New elsewhere:
+`MG.Audio.playReward()` (C-E-G-C triangle arpeggio + filtered-noise
+shimmer, ~1s, fully try/catch'd), `MG.UI.showToast()` + `#hud-toast` +
+its CSS, and a `'reward'` particle type reusing the existing particle
+array/update/render path rather than adding a second system.
+
+Three things worth knowing before touching this again:
+
+1. **Activation is strictly sword-only, by construction.** It reads
+   `MG.Combat.getAttackHitbox()`, which returns `null` outside the
+   `HITBOX_ACTIVE_FROM/TO` window — so walking into the stone, merely
+   pressing attack, or standing next to it can never trigger it
+   (explicitly tested: 3 simulated seconds of walking straight into it
+   left `state:'IDLE'`). Pre-attack targeting was deliberately *not*
+   extended to the stone — `findPreAttackTarget()` still only scans
+   `MG.Enemy.list`, so targeting can never "aim at" the objective.
+2. **A Mossling used to spawn on this exact spot.** `SPAWN_SPOTS` in
+   `enemy.js` contains `{x:700, y:400}` — the same clearing. No data was
+   changed to resolve it: because `main.js` runs `Map.init()` before
+   `Enemy.init()`, the moonstone's solid is already in `Map.solids` when
+   the existing `findClearSpot()` runs, so that Mossling is pushed ~8px
+   aside automatically. All 9 Mosslings still spawn. The emergent result
+   — one Mossling standing beside the objective — reads as a guardian and
+   was left as-is.
+3. **Persistence is session-only and survives death by construction.**
+   `Player.respawn()` calls `MG.Enemy.init()` but never touches `MG.Map`
+   or `MG.Game.moonstoneFound`, and `Map.init()` only ever runs once at
+   boot — so IDLE-before-death stays IDLE and ACTIVE-after-death stays
+   ACTIVE with no extra bookkeeping. No localStorage, no server save.
+
+Verification notes: the stone's visual distinctness was checked by
+sampling canvas pixels rather than by eye — the stone region differs from
+adjacent grass by an average of 68.9 per-pixel channel units (97 moonlight
+-blue pixels vs 0 in grass), and IDLE vs ACTIVE differ by 71.2 at an
+identical animation phase (max luminance 229 → 250.7). Reachability from
+spawn was proved by BFS over the real `solids` data (path found, 28705
+nodes explored). CSS transitions do not visibly advance in this headless
+test environment (`document.hidden === true`, so the page never
+composites) — the toast's *target* styles were verified instead
+(`opacity` 0 → 1 with `.is-visible`), along with its full timer sequence.
 
 ### v0.1.6 폴리시 — 사전 타겟팅 강화 (거리 가중 우선순위)
 

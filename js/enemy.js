@@ -143,21 +143,35 @@
      이상 떨어뜨려 한 화면(카메라 360x640)에 아홉 마리가 한꺼번에 몰리지 않게 했다.
      그래도 향후 맵 데이터가 바뀔 경우를 대비해 init() 에서 한 번 더 충돌 검사 후
      막혀 있으면 주변으로 살짝 밀어낸다(findClearSpot). */
+  /* PHASE 8.1-A: 마리 수(9)는 그대로 두고, 기존 스폰 지점 중 넷을 달의 돌
+     주변으로 옮겨 "수호대" 대형을 만든다. 새 적도, 새 AI도 만들지 않는다 —
+     위치와 리쉬(활동 반경)만 바꿔 긴장감을 만든다.
+       · 대각선 네 방향으로 배치해 상하좌우 접근 통로를 완전히 막지 않는다.
+       · 서로 70px 이상, 돌에서 51~58px 떨어뜨려 서로/돌과 겹치지 않게 한다.
+       · 전부 GLADES 의 (700,400,r=112) 공터 안이라 나무와도 충돌하지 않는다.
+     나머지 다섯은 기존처럼 숲 전역을 배회하는 일반 위협으로 남는다. */
   var SPAWN_SPOTS = [
     // 시작 숲 근처 (2)
     { x: 420, y: 690 },   // 시작 지점에서 이어지는 숲길 근처
     { x: 260, y: 650 },   // 시작 공터 반대편 가장자리
-    // 주 통로를 따라 (2)
+    // 주 통로를 따라 (1) — 공터로 가는 길목의 첫 경고
     { x: 640, y: 700 },   // 흙길 중간 지점
-    { x: 820, y: 668 },   // 흙길이 물가로 꺾이기 전
-    // 숲 더 깊은 곳 (3)
-    { x: 700, y: 400 },   // 숲 탐험 중간 공터
-    { x: 634, y: 560 },   // 북쪽 갈림길 초입
-    { x: 598, y: 430 },   // 갈림길을 따라 더 깊은 숲
     // 또 다른 트인 공간 (2)
     { x: 300, y: 235 },   // 북쪽 작은 공터 (PHASE 9 모스키 공터와 동일 — 설계 의도)
-    { x: 962, y: 646 }    // 물가 — 막힌 보물이 보이는 지점 근처
+    { x: 962, y: 646 },   // 물가 — 막힌 보물이 보이는 지점 근처
+
+    // 달의 돌 수호대 (4) — 공터를 지키며 거의 벗어나지 않는다
+    { x: 662, y: 366, guard: true },
+    { x: 740, y: 368, guard: true },
+    { x: 658, y: 440, guard: true },
+    { x: 744, y: 438, guard: true }
   ];
+
+  /* 수호대는 공터를 "지키는" 느낌이어야 하므로 활동 반경만 좁힌다.
+     속도/데미지/공격 주기는 일반 모슬링과 완전히 동일하다 — 난이도는
+     새 수치가 아니라 배치로만 만든다(모바일에서 불공정해지지 않도록). */
+  var GUARD_WANDER_LEASH = 20;   // 기본 46 → 20 (공터 안에서만 서성인다)
+  var GUARD_HOME_LEASH   = 120;  // 기본 260 → 120 (멀리 끌려나가지 않는다)
 
   var Enemy = {
     list: [],
@@ -167,11 +181,19 @@
     init: function () {
       this.list = [];
       this.particles = [];
+
+      /* PHASE 8.1-B: 숲이 정화된 뒤에는 모슬링이 다시 나타나지 않는다.
+         Player.respawn() 이 부활 때마다 이 init() 을 부르므로, 여기서
+         막아야 "정화 후에는 적대적 모슬링이 돌아오지 않는다"가 사망/부활을
+         거쳐도 유지된다 (별도 저장 시스템 없이 세션 플래그 하나로). */
+      if (MG.Game && MG.Game.cleansed) return;
+
       var solids = (MG.Map && MG.Map.solids) || [];
 
       for (var i = 0; i < SPAWN_SPOTS.length; i++) {
-        var spot = this.findClearSpot(SPAWN_SPOTS[i].x, SPAWN_SPOTS[i].y, solids);
-        this.list.push(this.create(spot.x, spot.y, i));
+        var def = SPAWN_SPOTS[i];
+        var spot = this.findClearSpot(def.x, def.y, solids);
+        this.list.push(this.create(spot.x, spot.y, i, def.guard === true));
       }
     },
 
@@ -190,11 +212,17 @@
       return { x: x, y: y }; // 최후 수단: 원래 자리 (이런 일은 없어야 정상)
     },
 
-    create: function (x, y, id) {
+    create: function (x, y, id, isGuard) {
       return {
         id: id,
         x: x, y: y,
         homeX: x, homeY: y,
+
+        /* PHASE 8.1-A: 수호대만 활동 반경이 좁다. 그 외 행동(추격/윈드업/
+           돌진/피격/넉백/사망)은 일반 모슬링과 완전히 같은 코드를 탄다. */
+        isGuard: !!isGuard,
+        wanderLeash: isGuard ? GUARD_WANDER_LEASH : WANDER_LEASH,
+        homeLeash:   isGuard ? GUARD_HOME_LEASH   : HOME_LEASH_HARD,
 
         hp: HP_MAX,
         maxHp: HP_MAX,
@@ -305,12 +333,16 @@
       var dist = Math.sqrt(dx * dx + dy * dy);
       var homeDist = Math.hypot(e.x - e.homeX, e.y - e.homeY);
 
+      // PHASE 8.1-A: 리쉬는 개체별 값을 쓴다(수호대는 더 짧다). 값이 없으면
+      // 기존 전역 상수로 떨어져 이전과 완전히 동일하게 동작한다.
+      var homeLeash = e.homeLeash || HOME_LEASH_HARD;
+
       if (e.state === 'CHASE') {
-        if (dist > LEAVE_RADIUS || homeDist > HOME_LEASH_HARD) {
+        if (dist > LEAVE_RADIUS || homeDist > homeLeash) {
           e.state = 'WANDER';
           this.pickWanderTarget(e);
         }
-      } else if (dist <= DETECT_RADIUS && homeDist <= HOME_LEASH_HARD) {
+      } else if (dist <= DETECT_RADIUS && homeDist <= homeLeash) {
         // homeDist 조건이 없으면: 이미 홈 리쉬 밖으로 밀려난(넉백 등으로) 모슬링이
         // WANDER 로 돌아가는 도중에도 플레이어가 근처면 매 프레임 다시 CHASE 로
         // 튕겨 들어왔다가 즉시 홈 리쉬 초과로 다시 WANDER 로 튕겨나가길 반복해
@@ -439,7 +471,7 @@
 
     pickWanderTarget: function (e) {
       var ang = Math.random() * Math.PI * 2;
-      var r = Math.random() * WANDER_LEASH;
+      var r = Math.random() * (e.wanderLeash || WANDER_LEASH);   // PHASE 8.1-A
       e.wanderTX = e.homeX + Math.cos(ang) * r;
       e.wanderTY = e.homeY + Math.sin(ang) * r;
       e.stateT = WANDER_MIN + Math.random() * (WANDER_MAX - WANDER_MIN);
@@ -619,16 +651,50 @@
       return best ? { enemy: best, direction: bestDir } : null;
     },
 
+    /* PHASE 8.1-B: 정화 파동이 훑고 지나간 모슬링을 이끼로 흩어 없앤다.
+       새 사망 연출 시스템을 만들지 않는다 — 기존 'DEAD' 상태(축소+페이드 후
+       updateDead 가 배열에서 제거)와 기존 'moss' 파티클을 그대로 쓰고,
+       달빛색 'reward' 알갱이만 몇 개 얹어 "정화됐다"는 색을 준다.
+       game.js 가 파동 반경을 매 프레임 넘겨주므로, 파동 앞면이 닿는 순서대로
+       차례차례 사라진다(한 프레임에 전부 사라지지 않는다). */
+    cleanseAt: function (ox, oy, radius) {
+      for (var i = 0; i < this.list.length; i++) {
+        var e = this.list[i];
+        if (e.state === 'DEAD') continue;
+
+        var dx = e.x - ox, dy = e.y - oy;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d > radius) continue;                 // 아직 파동이 닿지 않았다
+
+        e.state = 'DEAD';
+        e.deathT = DEATH_DURATION;
+        e.knockVX = 0; e.knockVY = 0;
+        e.hitFlashT = FLASH_DURATION;             // 파동에 부딪히는 순간의 번쩍임
+
+        var nx = d > 0.001 ? dx / d : 0;
+        var ny = d > 0.001 ? dy / d : -1;
+        this.spawnParticles(e.x, e.y, 7, nx, ny, 'moss');
+        this.spawnParticles(e.x, e.y, 4, nx, ny, 'reward');
+      }
+    },
+
     /* ------------------------------------------------------------ 파티클 */
     /* type: 'spark'(모슬링 피격 — 밝은 불빛) | 'moss'(처치 — 기존 이끼색 포프) |
-             'contact'(PHASE 6.2: 돌진이 플레이어에 닿음 — 옅은 붉은빛) */
+             'contact'(PHASE 6.2: 돌진이 플레이어에 닿음 — 옅은 붉은빛) |
+             'reward'(PHASE 8: 달의 돌 활성화 — 사방으로 퍼지는 달빛)
+       PHASE 8 주: 'reward' 는 적과 무관하지만, 파티클 시스템을 하나 더 만들지
+       않기 위해 기존 배열/업데이트/렌더 경로를 그대로 빌려 쓴다. */
     spawnParticles: function (x, y, count, nx, ny, type) {
       var spdBase = 22, spdRand = 26, lifeBase = 0.22, lifeRand = 0.12, maxLife = 0.34;
       if (type === 'spark') { spdBase = 30; spdRand = 30; lifeBase = 0.14; lifeRand = 0.08; maxLife = 0.22; }
       else if (type === 'contact') { spdBase = 20; spdRand = 18; lifeBase = 0.12; lifeRand = 0.06; maxLife = 0.18; }
+      else if (type === 'reward') { spdBase = 26; spdRand = 34; lifeBase = 0.40; lifeRand = 0.22; maxLife = 0.62; }
 
       for (var i = 0; i < count; i++) {
-        var ang = Math.atan2(ny, nx) + (Math.random() - 0.5) * 2.4;
+        // 보상은 특정 방향이 아니라 돌을 중심으로 사방으로 터진다
+        var ang = (type === 'reward')
+          ? Math.random() * Math.PI * 2
+          : Math.atan2(ny, nx) + (Math.random() - 0.5) * 2.4;
         var spd = spdBase + Math.random() * spdRand;
         this.particles.push({
           x: x, y: y - 8,
@@ -808,6 +874,15 @@
         } else if (p.type === 'contact') {
           // PHASE 6.2: 접촉 파티클 — player.js 의 붉은 플래시와 같은 계열 색
           ctx.fillStyle = 'rgba(255, 140, 140, ' + a.toFixed(2) + ')';
+          ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+        } else if (p.type === 'reward') {
+          // PHASE 8: 보상 파티클 — 달의 돌과 같은 창백한 달빛색.
+          // 다른 파티클보다 한 겹 더 밝게(중심 흰색 + 주변 달빛) 그려
+          // 세로 화면에서도 "특별한 일이 일어났다"가 읽히게 한다.
+          ctx.fillStyle = 'rgba(203, 232, 255, ' + a.toFixed(2) + ')';
+          ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y), 3, 1);
+          ctx.fillRect(Math.round(p.x), Math.round(p.y) - 1, 1, 3);
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + a.toFixed(2) + ')';
           ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
         } else {
           ctx.fillStyle = 'rgba(210, 240, 170, ' + a.toFixed(2) + ')';

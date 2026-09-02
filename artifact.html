@@ -115,6 +115,85 @@ html, body {
 .hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
 
 /* --------------------------------------------------------------------------
+   토스트 (PHASE 8) — 잠깐 떴다 사라지는 알림.
+   세로 화면 상단 1/4 지점에 놓아 하트(맨 위)와도, 조이스틱(하단 45%)/
+   공격 버튼(우하단)과도 겹치지 않는다. pointer-events: none 이라 조작을
+   가로채지 않는다.
+   -------------------------------------------------------------------------- */
+
+.hud-toast {
+  position: absolute;
+  left: 50%;
+  /* PHASE 8.1: 정화 순간에는 완료 문구(#hud-victory, 위쪽 11%)와 토스트가
+     동시에 뜬다. 서로 겹치지 않도록 토스트를 조금 더 아래로 내렸다.
+     (아래로 더 내리면 조이스틱 영역(화면 하단 45%)에 닿으므로 30% 가 한계) */
+  top: 30%;
+  transform: translate(-50%, -6px);
+  max-width: 78%;
+  padding: 0.55em 1.15em;
+  font-family: var(--mg-font-display);
+  font-size: clamp(13px, 2.7vh, 21px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--mg-moon);
+  background: var(--mg-panel);
+  border: 1px solid rgba(207, 228, 255, 0.45);
+  border-radius: 8px;
+  box-shadow: 0 0 18px rgba(120, 180, 255, 0.28),
+              0 4px 0 rgba(0, 0, 0, 0.4);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: 20;
+
+  opacity: 0;
+  transition: opacity 350ms ease, transform 350ms ease;
+}
+.hud-toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.hud-toast[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
+   완료 문구 (PHASE 8.1) — 정화가 끝나면 떠서 계속 남는다.
+   토스트보다 위(12%)에 두어 서로 겹치지 않고, 하단의 조이스틱(아래 45%)/
+   공격 버튼(우하단)과도 완전히 떨어져 있다. pointer-events: none.
+   -------------------------------------------------------------------------- */
+
+.hud-victory {
+  position: absolute;
+  left: 50%;
+  top: 11%;
+  transform: translate(-50%, -8px);
+  max-width: 92%;
+  text-align: center;
+  /* 두 줄로 접히면 아래 토스트와 겹치므로 항상 한 줄로 유지한다 */
+  white-space: nowrap;
+  font-family: var(--mg-font-display);
+  font-size: clamp(16px, 3.2vh, 26px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--mg-moon);
+  text-shadow: 0 0 20px rgba(150, 200, 255, 0.55),
+               0 3px 0 rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 15;
+
+  opacity: 0;
+  /* PHASE 8.1 폴리시: 나타날 때도 사라질 때도 같은 0.7초 페이드를 쓴다
+     (사라지는 시간 0.6~0.8초 요구에 맞춘 값이며, 나타날 때도 충분히 부드럽다).
+     ui.js 의 showVictory() 안 FADE 값과 반드시 같이 움직여야 한다. */
+  transition: opacity 700ms ease, transform 700ms ease;
+}
+.hud-victory.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.hud-victory[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
    오버레이 (타이틀 / 대화 / 결과 등 공통)
    -------------------------------------------------------------------------- */
 
@@ -319,8 +398,16 @@ body:not(.mg-touch) .attack-button {
         <!-- HUD: 좌상단 하트(PHASE 7), 우상단 버전 -->
         <div id="hud">
           <div id="hud-hearts" class="hud-slot hud-left"></div>
-          <div id="hud-version" class="hud-slot hud-right">v0.1.6</div>
+          <div id="hud-version" class="hud-slot hud-right">v0.1.8</div>
         </div>
+
+        <!-- PHASE 8: 임시 알림(달의 돌 발견 등). ui.js 의 showToast() 가
+             내용을 채우고 스스로 사라진다 — 상시 목표 패널이 아니다. -->
+        <div id="hud-toast" class="hud-toast" hidden></div>
+
+        <!-- PHASE 8.1: 정화 완료 문구. 한 번 뜨면 계속 남지만 조작을 가리지
+             않는다(pointer-events: none). 게임 오버 메뉴가 아니다. -->
+        <div id="hud-victory" class="hud-victory" hidden></div>
 
         <!-- DEBUG_MOBILE_LAYOUT 이 true 일 때만 game.js 가 내용을 채우고 보여준다 -->
         <pre id="debug-panel" class="debug-panel" hidden></pre>
@@ -340,7 +427,7 @@ body:not(.mg-touch) .attack-button {
             <h1 class="game-title">달빛 숲</h1>
             <p class="game-subtitle">달빛 숲의 수호자</p>
             <button id="btn-start" class="ui-button" type="button">모험 시작</button>
-            <p class="game-version">Prototype 0.1.6</p>
+            <p class="game-version">Prototype 0.1.8</p>
           </div>
         </div>
 
@@ -502,6 +589,59 @@ body:not(.mg-touch) .attack-button {
         src.stop(now + 0.3);
       } catch (e) {
         // 무음으로 넘어간다
+      }
+    },
+
+    /* PHASE 8: 달의 돌 활성화 보상음 — 지금까지의 효과음(짧은 타격/둔탁한 접촉)과
+       완전히 구분되는, 밝고 울림 있는 상승 아르페지오. 다섯 번째 음까지 차례로
+       쌓아 "해냈다"는 신호를 준다. 다른 소리보다 길지만(약 1초) 게임 진행을
+       막지 않으며, 오디오가 실패해도 조용히 넘어간다. */
+    playReward: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        // C5 - E5 - G5 - C6 (밝은 장3화음 + 옥타브) — 차례로 겹쳐 울린다
+        var notes = [523.25, 659.25, 783.99, 1046.50];
+        for (var i = 0; i < notes.length; i++) {
+          var start = now + i * 0.09;
+
+          var osc = ctx.createOscillator();
+          osc.type = 'triangle';                    // 사각파보다 부드럽고 종소리에 가깝다
+          osc.frequency.setValueAtTime(notes[i], start);
+
+          var gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.20, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.75);
+
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.8);
+        }
+
+        // 맨 위에 얹는 짧은 반짝임 — 노이즈를 높게 깎아 "샤랑" 하는 결을 준다
+        if (this._noiseBuffer) {
+          var shimmer = ctx.createBufferSource();
+          shimmer.buffer = this._noiseBuffer;
+
+          var hp = ctx.createBiquadFilter();
+          hp.type = 'highpass';
+          hp.frequency.setValueAtTime(2600, now);
+          hp.frequency.exponentialRampToValueAtTime(6000, now + 0.5);
+
+          var sGain = ctx.createGain();
+          sGain.gain.setValueAtTime(0.0001, now);
+          sGain.gain.exponentialRampToValueAtTime(0.10, now + 0.06);
+          sGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+
+          shimmer.connect(hp).connect(sGain).connect(ctx.destination);
+          shimmer.start(now);
+          shimmer.stop(now + 0.62);
+        }
+      } catch (e) {
+        // 무음으로 넘어간다 — 오디오 실패가 게임플레이를 막지 않는다
       }
     },
 
@@ -687,6 +827,27 @@ body:not(.mg-touch) .attack-button {
     [868, 738], [402, 452], [1216, 742], [1332, 520], [126, 330]
   ];
 
+  /* PHASE 8: 달의 돌(MOONSTONE) — 게임의 첫 목표.
+     자리는 GLADES 의 "숲 탐험 중간 공터"(700,400) 정중앙이다. 이 공터는
+     buildProps() 가 나무를 아예 심지 않는 반경이고, 가장 가까운 바위는
+     (742,512)로 110px 넘게 떨어져 있으며, 강(x 1000~1130)과도 무관하다 —
+     즉 지형을 하나도 바꾸지 않고 그대로 놓을 수 있다. 스폰(200,590)에서
+     PATH_MAIN → PATH_BRANCH 갈림길을 타고 자연스럽게 도달한다.
+     좌표 규약은 나무/바위와 같다: (x, y)는 "땅에 닿는 발치" 기준이다. */
+  var MOONSTONE_X = 700;
+  var MOONSTONE_Y = 400;
+
+  // 충돌 상자 — 걸어서 통과하지는 못하되, 검이 닿기 쉽도록 작게 잡는다
+  // (큰 투명 벽이 되지 않도록 발치 주변만 막는다).
+  var MOONSTONE_SOLID_W = 16;
+  var MOONSTONE_SOLID_H = 9;
+
+  // 검 상호작용 상자 — 모슬링의 getHurtbox() 와 같은 개념(발치 충돌과 별개로
+  // "몸통"을 덮는다). 결정 자체가 차지하는 높이를 넉넉히 감싸, 네 방향
+  // 어디서 휘둘러도 기존 검 히트박스(허리 높이 기준)와 정상적으로 겹친다.
+  var MOONSTONE_HIT_W = 16;
+  var MOONSTONE_HIT_H = 18;
+
   var PALETTE = {
     grassDark:  '#17351f',
     grassMid:   '#1e4527',
@@ -743,6 +904,12 @@ body:not(.mg-touch) .attack-button {
     fireflies: [],
     solids: [],          // 충돌 사각형 {x, y, w, h} (좌상단 기준)
     ground: null,        // 미리 구워둔 지면 캔버스
+
+    /* PHASE 8: 달의 돌. state 는 'IDLE' | 'ACTIVE' 두 가지뿐이고,
+       진행 플래그(MG.Game.moonstoneFound)와 짝을 이룬다. 여기(Map)는 좌표와
+       충돌/렌더 데이터만 들고, "언제 활성화되는가"는 game.js 가 판단한다.
+       activeT 는 활성화 이후 연출용 경과 시간(초)일 뿐 게임 로직이 아니다. */
+    moonstone: { x: MOONSTONE_X, y: MOONSTONE_Y, state: 'IDLE', activeT: 0 },
 
     /* 플레이어 시작 위치 (player.js 가 참조) */
     spawn: { x: 200, y: 590 },
@@ -816,6 +983,22 @@ body:not(.mg-touch) .attack-button {
           speed: 0.5 + rng() * 0.8
         });
       }
+
+      /* PHASE 8: 달의 돌 주변에만 반딧불을 의도적으로 조금 모아 둔다.
+         미니맵/퀘스트 화살표 같은 UI 를 붙이지 않고, 이미 숲 전체에 있는
+         연출 요소를 그대로 써서 "저기 뭔가 있다"를 자연스럽게 흘린다.
+         (같은 fireflies 배열에 넣으므로 렌더/컬링 경로도 기존 그대로다) */
+      var m = this.moonstone;
+      for (var j = 0; j < 14; j++) {
+        var ang = rng() * Math.PI * 2;
+        var rad = 14 + rng() * 34;   // 돌에 너무 붙지도, 흩어지지도 않게
+        this.fireflies.push({
+          x: m.x + Math.cos(ang) * rad,
+          y: m.y + Math.sin(ang) * rad * 0.7,   // 살짝 납작하게 — 바닥에 깔린 느낌
+          phase: rng() * Math.PI * 2,
+          speed: 0.4 + rng() * 0.5
+        });
+      }
     },
 
     /* --------------------------------------------------------- 충돌 데이터 */
@@ -846,7 +1029,33 @@ body:not(.mg-touch) .attack-button {
         s.push({ x: k.x - rw / 2, y: k.y - 7, w: rw, h: 10 });
       }
 
+      // PHASE 8: 달의 돌 — 걸어서 통과하지 못하게 발치만 막는다.
+      // (기존 충돌 배열에 사각형 하나를 더할 뿐, 새 물리 구조는 없다.
+      //  main.js 순서상 Map.init() 이 Enemy.init() 보다 먼저 돌기 때문에,
+      //  같은 자리(700,400)의 모슬링 스폰 지점은 enemy.js 의 기존
+      //  findClearSpot() 이 이 solid 를 보고 알아서 옆으로 밀어낸다.)
+      var m = this.moonstone;
+      s.push({
+        x: m.x - MOONSTONE_SOLID_W / 2,
+        y: m.y - MOONSTONE_SOLID_H,
+        w: MOONSTONE_SOLID_W,
+        h: MOONSTONE_SOLID_H
+      });
+
       this.solids = s;
+    },
+
+    /* PHASE 8: 검 판정용 상호작용 상자 (월드 좌표).
+       enemy.js 의 getHurtbox() 와 같은 규약이라 game.js 가 기존
+       MG.Collision.overlaps() 로 그대로 비교할 수 있다. */
+    getMoonstoneHitbox: function () {
+      var m = this.moonstone;
+      return {
+        x: m.x - MOONSTONE_HIT_W / 2,
+        y: m.y - MOONSTONE_HIT_H,
+        w: MOONSTONE_HIT_W,
+        h: MOONSTONE_HIT_H
+      };
     },
 
     /* --------------------------------------------------- 지면 굽기 (1회) */
@@ -1023,12 +1232,156 @@ body:not(.mg-touch) .attack-button {
         if (o.y < cam.y - 40 || o.y > cam.y + cam.h + 40) continue;
         out.push({ y: o.y, obj: o, kind: 'rock' });
       }
+
+      // PHASE 8: 달의 돌도 나무/바위와 같은 y 정렬 대상에 넣는다 —
+      // 그래야 플레이어가 돌 앞/뒤로 지나갈 때 앞뒤 관계가 자연스럽다.
+      o = this.moonstone;
+      if (o.x >= cam.x - 40 && o.x <= cam.x + cam.w + 40 &&
+          o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
+        out.push({ y: o.y, obj: o, kind: 'moonstone' });
+      }
       return out;
     },
 
     renderProp: function (ctx, entry) {
       if (entry.kind === 'tree') this.drawTree(ctx, entry.obj);
       else if (entry.kind === 'rock') this.drawRock(ctx, entry.obj);
+      else if (entry.kind === 'moonstone') this.drawMoonstone(ctx, entry.obj);
+    },
+
+    /* PHASE 8: 달의 돌 — 나무(둥근 초록 캐노피)/바위(각진 회색)와 확실히
+       구분되도록 창백한 달빛색 결정으로 그린다. 절차적 픽셀 아트만 쓰고
+       외부 스프라이트는 없다 (프로젝트 전체 규약 그대로).
+         IDLE   — 은은하게 맥동하는 푸른 빛. "아직 건드리지 않은 것".
+         ACTIVE — 맥동이 잦아들고 밝고 안정된 빛 + 완성을 알리는 고리.
+                  화면을 덮는 UI 로 바꾸지 않고 월드에 계속 남는다. */
+    drawMoonstone: function (ctx, m) {
+      var t = (MG.Game && MG.Game.time) || 0;
+      var active = m.state === 'ACTIVE';
+
+      /* PHASE 8.1: IDLE 맥동을 더 눈에 띄게 다듬었다 — 화면 중앙에 오기
+         전에도 "저기 뭔가 빛난다"가 읽혀야 하기 때문이다. 다만 번쩍이지
+         않도록 주기는 오히려 느리게(2.4 → 1.7) 하고, 대신 진폭(빛무리 크기와
+         밝기)을 키워 "천천히 숨쉬는" 느낌으로 만든다.
+         ACTIVE 는 그대로 거의 일정하게 — 이미 끝난 것은 재촉하지 않는다. */
+      var pulse = active
+        ? 0.86 + 0.14 * Math.sin(t * 1.6)
+        : 0.50 + 0.50 * Math.sin(t * 1.7);
+
+      var cx = m.x;
+      var baseY = m.y;
+      var topY = baseY - 17;          // 결정 꼭대기
+      var midY = baseY - 10;          // 결정 허리 (가장 넓은 지점)
+
+      // 바닥 그림자
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.30)';
+      ctx.beginPath();
+      ctx.ellipse(Math.round(cx), Math.round(baseY + 1), 8, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 바닥에 번지는 빛무리 (지면을 물들이는 느낌).
+      // PHASE 8.1: IDLE 일 때 반경 자체가 16~32 로 숨쉬어, 멀리서도 눈에 띈다.
+      var glowR = active ? 26 : (16 + 16 * pulse);
+      var glowA = active ? (0.34 * pulse) : (0.14 + 0.22 * pulse);
+      var groundGlow = ctx.createRadialGradient(cx, baseY - 4, 0, cx, baseY - 4, glowR);
+      groundGlow.addColorStop(0, 'rgba(180, 224, 255, ' + glowA.toFixed(3) + ')');
+      groundGlow.addColorStop(1, 'rgba(180, 224, 255, 0)');
+      ctx.fillStyle = groundGlow;
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY - 4, glowR, glowR * 0.62, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 결정을 받치는 작은 돌받침 (풀밭에 떠 있어 보이지 않게)
+      ctx.fillStyle = '#4c5666';
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, baseY);
+      ctx.lineTo(cx - 5, baseY - 4);
+      ctx.lineTo(cx + 5, baseY - 4);
+      ctx.lineTo(cx + 7, baseY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#626e80';
+      ctx.fillRect(Math.round(cx - 5), Math.round(baseY - 4), 10, 1);
+
+      // 결정 본체 — 위아래로 뾰족한 육각 실루엣
+      var bodyDark  = active ? '#6f9fd8' : '#4d6f9c';
+      var bodyMid   = active ? '#a9d4ff' : '#7ea6d4';
+      var bodyLight = active ? '#ecf7ff' : '#c2dcf7';
+
+      ctx.fillStyle = bodyDark;
+      ctx.beginPath();
+      ctx.moveTo(cx,     topY);
+      ctx.lineTo(cx + 6, midY);
+      ctx.lineTo(cx + 4, baseY - 4);
+      ctx.lineTo(cx - 4, baseY - 4);
+      ctx.lineTo(cx - 6, midY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 왼쪽 면(밝은 쪽) — 달빛을 받는 각
+      ctx.fillStyle = bodyMid;
+      ctx.beginPath();
+      ctx.moveTo(cx,     topY);
+      ctx.lineTo(cx,     baseY - 4);
+      ctx.lineTo(cx - 4, baseY - 4);
+      ctx.lineTo(cx - 6, midY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 하이라이트 결
+      ctx.fillStyle = bodyLight;
+      ctx.beginPath();
+      ctx.moveTo(cx - 1, topY + 2);
+      ctx.lineTo(cx - 1, midY + 3);
+      ctx.lineTo(cx - 4, midY);
+      ctx.closePath();
+      ctx.fill();
+
+      // 결정 내부의 빛 — 맥동하는 심지
+      ctx.save();
+      ctx.globalAlpha = active ? (0.55 + 0.35 * pulse) : (0.30 + 0.45 * pulse);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(cx - 1), Math.round(midY - 2), 2, 6);
+      ctx.restore();
+
+      if (active) {
+        // 완성을 알리는 고리 — 천천히 숨쉬는 안정된 빛
+        ctx.save();
+        ctx.globalAlpha = 0.30 + 0.20 * Math.sin(t * 1.3);
+        ctx.strokeStyle = '#dff0ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, baseY - 9, 12, 7, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // 주변을 도는 작은 빛알갱이 세 개 (활성 상태를 멀리서도 읽히게)
+        for (var i = 0; i < 3; i++) {
+          var a = t * 1.1 + (i / 3) * Math.PI * 2;
+          var ox = cx + Math.cos(a) * 12;
+          var oy = (baseY - 9) + Math.sin(a) * 6;
+          ctx.fillStyle = 'rgba(226, 243, 255, ' + (0.5 + 0.4 * Math.sin(t * 3 + i)).toFixed(2) + ')';
+          ctx.fillRect(Math.round(ox), Math.round(oy), 1, 1);
+        }
+      } else {
+        // IDLE — 숨쉬는 바깥 후광. 빛무리(바닥)와 다른 높이에 한 겹 더 있어
+        // 결정이 화면 가장자리에 걸쳐 있을 때도 존재가 읽힌다.
+        ctx.save();
+        ctx.globalAlpha = 0.10 + 0.22 * pulse;
+        ctx.strokeStyle = '#cfe4ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, baseY - 10, 9 + 5 * pulse, 6 + 3 * pulse, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // 꼭대기에서 반짝 튀는 작은 섬광 (주기적으로만)
+        var sparkle = Math.sin(t * 2.4);
+        if (sparkle > 0.86) {
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + ((sparkle - 0.86) / 0.14).toFixed(2) + ')';
+          ctx.fillRect(Math.round(cx), Math.round(topY - 2), 1, 1);
+        }
+      }
     },
 
     drawTree: function (ctx, t) {
@@ -2304,21 +2657,35 @@ body:not(.mg-touch) .attack-button {
      이상 떨어뜨려 한 화면(카메라 360x640)에 아홉 마리가 한꺼번에 몰리지 않게 했다.
      그래도 향후 맵 데이터가 바뀔 경우를 대비해 init() 에서 한 번 더 충돌 검사 후
      막혀 있으면 주변으로 살짝 밀어낸다(findClearSpot). */
+  /* PHASE 8.1-A: 마리 수(9)는 그대로 두고, 기존 스폰 지점 중 넷을 달의 돌
+     주변으로 옮겨 "수호대" 대형을 만든다. 새 적도, 새 AI도 만들지 않는다 —
+     위치와 리쉬(활동 반경)만 바꿔 긴장감을 만든다.
+       · 대각선 네 방향으로 배치해 상하좌우 접근 통로를 완전히 막지 않는다.
+       · 서로 70px 이상, 돌에서 51~58px 떨어뜨려 서로/돌과 겹치지 않게 한다.
+       · 전부 GLADES 의 (700,400,r=112) 공터 안이라 나무와도 충돌하지 않는다.
+     나머지 다섯은 기존처럼 숲 전역을 배회하는 일반 위협으로 남는다. */
   var SPAWN_SPOTS = [
     // 시작 숲 근처 (2)
     { x: 420, y: 690 },   // 시작 지점에서 이어지는 숲길 근처
     { x: 260, y: 650 },   // 시작 공터 반대편 가장자리
-    // 주 통로를 따라 (2)
+    // 주 통로를 따라 (1) — 공터로 가는 길목의 첫 경고
     { x: 640, y: 700 },   // 흙길 중간 지점
-    { x: 820, y: 668 },   // 흙길이 물가로 꺾이기 전
-    // 숲 더 깊은 곳 (3)
-    { x: 700, y: 400 },   // 숲 탐험 중간 공터
-    { x: 634, y: 560 },   // 북쪽 갈림길 초입
-    { x: 598, y: 430 },   // 갈림길을 따라 더 깊은 숲
     // 또 다른 트인 공간 (2)
     { x: 300, y: 235 },   // 북쪽 작은 공터 (PHASE 9 모스키 공터와 동일 — 설계 의도)
-    { x: 962, y: 646 }    // 물가 — 막힌 보물이 보이는 지점 근처
+    { x: 962, y: 646 },   // 물가 — 막힌 보물이 보이는 지점 근처
+
+    // 달의 돌 수호대 (4) — 공터를 지키며 거의 벗어나지 않는다
+    { x: 662, y: 366, guard: true },
+    { x: 740, y: 368, guard: true },
+    { x: 658, y: 440, guard: true },
+    { x: 744, y: 438, guard: true }
   ];
+
+  /* 수호대는 공터를 "지키는" 느낌이어야 하므로 활동 반경만 좁힌다.
+     속도/데미지/공격 주기는 일반 모슬링과 완전히 동일하다 — 난이도는
+     새 수치가 아니라 배치로만 만든다(모바일에서 불공정해지지 않도록). */
+  var GUARD_WANDER_LEASH = 20;   // 기본 46 → 20 (공터 안에서만 서성인다)
+  var GUARD_HOME_LEASH   = 120;  // 기본 260 → 120 (멀리 끌려나가지 않는다)
 
   var Enemy = {
     list: [],
@@ -2328,11 +2695,19 @@ body:not(.mg-touch) .attack-button {
     init: function () {
       this.list = [];
       this.particles = [];
+
+      /* PHASE 8.1-B: 숲이 정화된 뒤에는 모슬링이 다시 나타나지 않는다.
+         Player.respawn() 이 부활 때마다 이 init() 을 부르므로, 여기서
+         막아야 "정화 후에는 적대적 모슬링이 돌아오지 않는다"가 사망/부활을
+         거쳐도 유지된다 (별도 저장 시스템 없이 세션 플래그 하나로). */
+      if (MG.Game && MG.Game.cleansed) return;
+
       var solids = (MG.Map && MG.Map.solids) || [];
 
       for (var i = 0; i < SPAWN_SPOTS.length; i++) {
-        var spot = this.findClearSpot(SPAWN_SPOTS[i].x, SPAWN_SPOTS[i].y, solids);
-        this.list.push(this.create(spot.x, spot.y, i));
+        var def = SPAWN_SPOTS[i];
+        var spot = this.findClearSpot(def.x, def.y, solids);
+        this.list.push(this.create(spot.x, spot.y, i, def.guard === true));
       }
     },
 
@@ -2351,11 +2726,17 @@ body:not(.mg-touch) .attack-button {
       return { x: x, y: y }; // 최후 수단: 원래 자리 (이런 일은 없어야 정상)
     },
 
-    create: function (x, y, id) {
+    create: function (x, y, id, isGuard) {
       return {
         id: id,
         x: x, y: y,
         homeX: x, homeY: y,
+
+        /* PHASE 8.1-A: 수호대만 활동 반경이 좁다. 그 외 행동(추격/윈드업/
+           돌진/피격/넉백/사망)은 일반 모슬링과 완전히 같은 코드를 탄다. */
+        isGuard: !!isGuard,
+        wanderLeash: isGuard ? GUARD_WANDER_LEASH : WANDER_LEASH,
+        homeLeash:   isGuard ? GUARD_HOME_LEASH   : HOME_LEASH_HARD,
 
         hp: HP_MAX,
         maxHp: HP_MAX,
@@ -2466,12 +2847,16 @@ body:not(.mg-touch) .attack-button {
       var dist = Math.sqrt(dx * dx + dy * dy);
       var homeDist = Math.hypot(e.x - e.homeX, e.y - e.homeY);
 
+      // PHASE 8.1-A: 리쉬는 개체별 값을 쓴다(수호대는 더 짧다). 값이 없으면
+      // 기존 전역 상수로 떨어져 이전과 완전히 동일하게 동작한다.
+      var homeLeash = e.homeLeash || HOME_LEASH_HARD;
+
       if (e.state === 'CHASE') {
-        if (dist > LEAVE_RADIUS || homeDist > HOME_LEASH_HARD) {
+        if (dist > LEAVE_RADIUS || homeDist > homeLeash) {
           e.state = 'WANDER';
           this.pickWanderTarget(e);
         }
-      } else if (dist <= DETECT_RADIUS && homeDist <= HOME_LEASH_HARD) {
+      } else if (dist <= DETECT_RADIUS && homeDist <= homeLeash) {
         // homeDist 조건이 없으면: 이미 홈 리쉬 밖으로 밀려난(넉백 등으로) 모슬링이
         // WANDER 로 돌아가는 도중에도 플레이어가 근처면 매 프레임 다시 CHASE 로
         // 튕겨 들어왔다가 즉시 홈 리쉬 초과로 다시 WANDER 로 튕겨나가길 반복해
@@ -2600,7 +2985,7 @@ body:not(.mg-touch) .attack-button {
 
     pickWanderTarget: function (e) {
       var ang = Math.random() * Math.PI * 2;
-      var r = Math.random() * WANDER_LEASH;
+      var r = Math.random() * (e.wanderLeash || WANDER_LEASH);   // PHASE 8.1-A
       e.wanderTX = e.homeX + Math.cos(ang) * r;
       e.wanderTY = e.homeY + Math.sin(ang) * r;
       e.stateT = WANDER_MIN + Math.random() * (WANDER_MAX - WANDER_MIN);
@@ -2780,16 +3165,50 @@ body:not(.mg-touch) .attack-button {
       return best ? { enemy: best, direction: bestDir } : null;
     },
 
+    /* PHASE 8.1-B: 정화 파동이 훑고 지나간 모슬링을 이끼로 흩어 없앤다.
+       새 사망 연출 시스템을 만들지 않는다 — 기존 'DEAD' 상태(축소+페이드 후
+       updateDead 가 배열에서 제거)와 기존 'moss' 파티클을 그대로 쓰고,
+       달빛색 'reward' 알갱이만 몇 개 얹어 "정화됐다"는 색을 준다.
+       game.js 가 파동 반경을 매 프레임 넘겨주므로, 파동 앞면이 닿는 순서대로
+       차례차례 사라진다(한 프레임에 전부 사라지지 않는다). */
+    cleanseAt: function (ox, oy, radius) {
+      for (var i = 0; i < this.list.length; i++) {
+        var e = this.list[i];
+        if (e.state === 'DEAD') continue;
+
+        var dx = e.x - ox, dy = e.y - oy;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d > radius) continue;                 // 아직 파동이 닿지 않았다
+
+        e.state = 'DEAD';
+        e.deathT = DEATH_DURATION;
+        e.knockVX = 0; e.knockVY = 0;
+        e.hitFlashT = FLASH_DURATION;             // 파동에 부딪히는 순간의 번쩍임
+
+        var nx = d > 0.001 ? dx / d : 0;
+        var ny = d > 0.001 ? dy / d : -1;
+        this.spawnParticles(e.x, e.y, 7, nx, ny, 'moss');
+        this.spawnParticles(e.x, e.y, 4, nx, ny, 'reward');
+      }
+    },
+
     /* ------------------------------------------------------------ 파티클 */
     /* type: 'spark'(모슬링 피격 — 밝은 불빛) | 'moss'(처치 — 기존 이끼색 포프) |
-             'contact'(PHASE 6.2: 돌진이 플레이어에 닿음 — 옅은 붉은빛) */
+             'contact'(PHASE 6.2: 돌진이 플레이어에 닿음 — 옅은 붉은빛) |
+             'reward'(PHASE 8: 달의 돌 활성화 — 사방으로 퍼지는 달빛)
+       PHASE 8 주: 'reward' 는 적과 무관하지만, 파티클 시스템을 하나 더 만들지
+       않기 위해 기존 배열/업데이트/렌더 경로를 그대로 빌려 쓴다. */
     spawnParticles: function (x, y, count, nx, ny, type) {
       var spdBase = 22, spdRand = 26, lifeBase = 0.22, lifeRand = 0.12, maxLife = 0.34;
       if (type === 'spark') { spdBase = 30; spdRand = 30; lifeBase = 0.14; lifeRand = 0.08; maxLife = 0.22; }
       else if (type === 'contact') { spdBase = 20; spdRand = 18; lifeBase = 0.12; lifeRand = 0.06; maxLife = 0.18; }
+      else if (type === 'reward') { spdBase = 26; spdRand = 34; lifeBase = 0.40; lifeRand = 0.22; maxLife = 0.62; }
 
       for (var i = 0; i < count; i++) {
-        var ang = Math.atan2(ny, nx) + (Math.random() - 0.5) * 2.4;
+        // 보상은 특정 방향이 아니라 돌을 중심으로 사방으로 터진다
+        var ang = (type === 'reward')
+          ? Math.random() * Math.PI * 2
+          : Math.atan2(ny, nx) + (Math.random() - 0.5) * 2.4;
         var spd = spdBase + Math.random() * spdRand;
         this.particles.push({
           x: x, y: y - 8,
@@ -2970,6 +3389,15 @@ body:not(.mg-touch) .attack-button {
           // PHASE 6.2: 접촉 파티클 — player.js 의 붉은 플래시와 같은 계열 색
           ctx.fillStyle = 'rgba(255, 140, 140, ' + a.toFixed(2) + ')';
           ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+        } else if (p.type === 'reward') {
+          // PHASE 8: 보상 파티클 — 달의 돌과 같은 창백한 달빛색.
+          // 다른 파티클보다 한 겹 더 밝게(중심 흰색 + 주변 달빛) 그려
+          // 세로 화면에서도 "특별한 일이 일어났다"가 읽히게 한다.
+          ctx.fillStyle = 'rgba(203, 232, 255, ' + a.toFixed(2) + ')';
+          ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y), 3, 1);
+          ctx.fillRect(Math.round(p.x), Math.round(p.y) - 1, 1, 3);
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + a.toFixed(2) + ')';
+          ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
         } else {
           ctx.fillStyle = 'rgba(210, 240, 170, ' + a.toFixed(2) + ')';
           ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
@@ -3055,6 +3483,8 @@ body:not(.mg-touch) .attack-button {
       this.el.startBtn = document.getElementById('btn-start');
       this.el.version = document.getElementById('hud-version');
       this.el.hearts = document.getElementById('hud-hearts');
+      this.el.toast = document.getElementById('hud-toast');     // PHASE 8
+      this.el.victory = document.getElementById('hud-victory'); // PHASE 8.1
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -3139,6 +3569,70 @@ body:not(.mg-touch) .attack-button {
       for (var i = 0; i < maxHp; i++) str += (i < full) ? '❤️' : '🤍';
 
       if (this.el.hearts.textContent !== str) this.el.hearts.textContent = str;
+    },
+
+    /* PHASE 8: 잠깐 떴다 저절로 사라지는 알림. 퀘스트 로그도, 상시 목표
+       패널도 아니다 — 문자열 하나를 넣고 CSS 트랜지션으로 페이드인/아웃만
+       한다. pointer-events 는 style.css 에서 none 이라 조작을 절대 가리지
+       않는다. 연속 호출되면 이전 타이머를 지우고 새로 시작한다. */
+    showToast: function (text, holdMs) {
+      if (!this.el.toast) this.el.toast = document.getElementById('hud-toast');
+      if (!this.el.toast) return;
+
+      var el = this.el.toast;
+      var self = this;
+
+      if (this._toastHold) global.clearTimeout(this._toastHold);
+      if (this._toastHide) global.clearTimeout(this._toastHide);
+
+      el.textContent = text;
+      el.hidden = false;
+      // 숨김 상태에서 바로 클래스를 붙이면 트랜지션이 생략되는 브라우저가 있어
+      // 레이아웃을 한 번 강제로 확정시킨 뒤 보이게 한다.
+      void el.offsetWidth;
+      el.classList.add('is-visible');
+
+      var hold = holdMs || 2200;   // 페이드(0.35s) + 유지 + 페이드(0.4s) ≈ 3초
+      this._toastHold = global.setTimeout(function () {
+        el.classList.remove('is-visible');
+        self._toastHide = global.setTimeout(function () { el.hidden = true; }, 400);
+      }, hold);
+    },
+
+    /* PHASE 8.1: 완료 문구. 별도 메뉴/화면이 아니라 기존 HUD 위에 얹는 텍스트
+       한 줄이며, pointer-events: none 이라 조작(조이스틱/공격 버튼)을 절대
+       가리지 않는다.
+       PHASE 8.1 폴리시: 예전에는 화면에 영구히 남았지만, 이제 토스트와 같은
+       방식으로 스스로 사라진다 — 부드럽게 나타나 약 2.7초간 또렷하게 머문 뒤
+       0.7초에 걸쳐 사라지고 hidden 으로 완전히 빠진다.
+       중요: 이건 순수하게 DOM/표시 문제다. 여기서 MG.Game.cleansed / 달의 돌
+       상태 / 밝아진 분위기 / 비네트 / 정리된 적 등 정화 상태는 절대 건드리지
+       않는다 — 글자만 사라지고 세계는 그대로 정화된 채 남는다. */
+    showVictory: function (text, holdMs) {
+      if (!this.el.victory) this.el.victory = document.getElementById('hud-victory');
+      if (!this.el.victory) return;
+
+      var el = this.el.victory;
+      var self = this;
+
+      // 반복 호출돼도 이전 타이머가 겹쳐 "보이는 채로 멈추는" 일이 없도록 정리한다
+      if (this._victoryHold) global.clearTimeout(this._victoryHold);
+      if (this._victoryHide) global.clearTimeout(this._victoryHide);
+
+      el.textContent = text;
+      el.hidden = false;
+      void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록
+      el.classList.add('is-visible');
+
+      // style.css 의 transition 과 맞춘 값 (페이드 0.7초)
+      var FADE = 700;
+      var hold = holdMs || 2700;    // 완전히 또렷한 상태로 머무는 시간
+      this._victoryHold = global.setTimeout(function () {
+        el.classList.remove('is-visible');                       // 0.7초 페이드아웃 시작
+        self._victoryHide = global.setTimeout(function () {
+          el.hidden = true;                                      // 완전히 사라진다
+        }, FADE + 50);
+      }, FADE + hold);              // 페이드인이 끝난 뒤부터 유지 시간을 센다
     }
   };
 
@@ -3175,8 +3669,17 @@ body:not(.mg-touch) .attack-button {
   // 쿨다운 등 기존 타이밍 코드를 손대지 않고도 "거의 정지"처럼 보인다.
   var HITSTOP_SCALE = 0.06;
 
+  /* PHASE 8.1: 정화(THE CLEANSING) 연출 상수.
+     파동은 화면(360x640)의 대각 절반(~367)보다 넉넉히 크게 퍼져 맵 위 남은
+     모슬링까지 닿는다. 게임을 멈추지 않고, 컷신도 없다 — 그냥 짧고 강한
+     한 번의 파동이다. */
+  var CLEANSE_DURATION = 1.0;      // 초 — 파동이 다 퍼지는 데 걸리는 시간
+  var CLEANSE_MAX_RADIUS = 560;    // 월드 픽셀 — 가장 먼 스폰 지점까지 덮는다
+  var CLEANSE_FLASH = 0.18;        // 초 — 활성화 순간의 짧은 화면 섬광
+  var ATMOSPHERE_FADE = 1.4;       // 초 — 숲이 밝아지는 데 걸리는 시간
+
   var Game = {
-    VERSION: '0.1.6',
+    VERSION: '0.1.8',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -3191,6 +3694,24 @@ body:not(.mg-touch) .attack-button {
     time: 0,              // 누적 경과 시간(초)
     frame: 0,
     hitStopT: 0,           // PHASE 6.1: 남은 히트스탑 시간(실시간 초)
+
+    /* PHASE 8: 첫 게임 목표(달의 돌) 진행 플래그. 퀘스트 프레임워크가 아니라
+       불린 하나다. 이번 세션 동안만 유지되며(로컬스토리지/서버 저장 없음),
+       사망/부활로는 절대 되돌아가지 않는다 — Player.respawn() 은 모슬링만
+       MG.Enemy.init() 으로 되돌리고 이 값은 건드리지 않기 때문이다. */
+    moonstoneFound: false,
+
+    /* PHASE 8.1-B: 숲이 정화되었는가. moonstoneFound 와 마찬가지로 이번
+       세션 동안만 유지되는 불린 하나이며, 사망/부활로 절대 되돌아가지
+       않는다(Player.respawn() 은 이 값을 건드리지 않는다). 저장 시스템 없음. */
+    cleansed: false,
+
+    // 정화 파동이 퍼지는 동안에만 존재하는 임시 상태 { t, x, y }
+    cleanse: null,
+
+    // 0 = 정화 전(어둡고 무겁게) → 1 = 정화 후(달빛이 든 것처럼 밝게)
+    atmosphere: 0,
+
     _lastTs: 0,
     _rafId: 0,
 
@@ -3364,8 +3885,101 @@ body:not(.mg-touch) .attack-button {
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
+      this.updateMoonstone(dt);
+      this.updateCleansing(dt);
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
+    },
+
+    /* PHASE 8: 달의 돌 — 오직 "실제 검 히트박스가 겹쳤을 때"만 활성화된다.
+       걸어서 부딪히거나, 공격 버튼만 누르거나, 근처에 있다는 것만으로는
+       절대 발동하지 않는다 — 기존 전투 규칙을 그대로 따르기 위해
+       MG.Combat.getAttackHitbox() 가 null 이 아닐 때(=판정 활성 구간)의
+       사각형만 본다. 사전 타겟팅(findPreAttackTarget)은 모슬링 목록만
+       훑으므로 달의 돌을 겨냥하는 일도 없다(설계상 그대로 둔다). */
+    updateMoonstone: function (dt) {
+      if (!MG.Map || !MG.Map.moonstone) return;
+      var m = MG.Map.moonstone;
+
+      if (m.state === 'ACTIVE') {
+        m.activeT += dt;   // 연출용 경과 시간일 뿐 — 게임 로직은 아니다
+        return;
+      }
+      if (this.moonstoneFound) return;          // 이미 끝난 목표 (이중 안전장치)
+      if (!MG.Player || MG.Player.state === 'DEAD') return;
+      if (!MG.Combat || !MG.Combat.getAttackHitbox || !MG.Collision) return;
+
+      var box = MG.Combat.getAttackHitbox(MG.Player);
+      if (!box) return;                          // 스윙 중이라도 판정 구간이 아니면 무시
+
+      var hit = MG.Map.getMoonstoneHitbox();
+      if (!MG.Collision.overlaps(box.x, box.y, box.w, box.h, hit.x, hit.y, hit.w, hit.h)) return;
+
+      this.activateMoonstone();
+    },
+
+    /* PHASE 8: 단 한 번만 실행되는 보상 시퀀스.
+       체력 회복 → 하트 UI 갱신 → 보상음 → 파티클 → 토스트.
+       플레이어의 위치/이동/사망 상태는 건드리지 않는다. */
+    activateMoonstone: function () {
+      if (this.moonstoneFound) return;
+      this.moonstoneFound = true;
+
+      var m = MG.Map.moonstone;
+      m.state = 'ACTIVE';
+      m.activeT = 0;
+
+      // A. 체력을 가득 채우고 하트를 즉시 갱신한다 (회복 아이템이 아니라 즉시 보상)
+      if (MG.Player) {
+        MG.Player.hp = MG.Player.maxHp;
+        if (MG.UI && MG.UI.renderHearts) MG.UI.renderHearts(MG.Player.hp, MG.Player.maxHp);
+      }
+
+      // B. 보상음 (오디오 실패가 게임을 막지 않는다 — audio.js 내부에서 try/catch)
+      if (MG.Audio && MG.Audio.playReward) MG.Audio.playReward();
+
+      // C. 돌을 중심으로 짧고 밝은 빛 폭발 (기존 파티클 시스템 재사용)
+      if (MG.Enemy && MG.Enemy.spawnParticles) {
+        MG.Enemy.spawnParticles(m.x, m.y - 4, 18, 0, -1, 'reward');
+      }
+
+      // D. 임시 토스트 — 퀘스트 로그가 아니라 잠깐 떴다 사라지는 알림
+      if (MG.UI && MG.UI.showToast) MG.UI.showToast('달의 돌을 발견했다');
+
+      // E. PHASE 8.1: 그리고 숲 전체가 정화된다 — 이 게임의 결말.
+      this.startCleansing(m.x, m.y);
+    },
+
+    /* PHASE 8.1-B: 정화 시작. 게임을 멈추지 않고(컷신 없음) 아주 짧은
+       히트스탑만 걸어 "쿵" 하는 무게를 준다 — 기존 hitStop() 은 dt 배율만
+       낮출 뿐 입력을 막지 않으므로 조작권은 계속 플레이어에게 있다. */
+    startCleansing: function (x, y) {
+      if (this.cleansed) return;
+      this.cleansed = true;
+      this.cleanse = { t: 0, x: x, y: y };
+
+      this.hitStop(0.08);
+
+      if (MG.UI && MG.UI.showVictory) MG.UI.showVictory('숲이 정화되었다');
+    },
+
+    /* 파동을 퍼뜨리고(=닿는 순서대로 모슬링을 정화하고) 숲을 서서히 밝힌다. */
+    updateCleansing: function (dt) {
+      // 분위기 전환은 파동이 끝난 뒤에도 계속 이어진다
+      if (this.cleansed && this.atmosphere < 1) {
+        this.atmosphere = Math.min(1, this.atmosphere + dt / ATMOSPHERE_FADE);
+      }
+
+      var c = this.cleanse;
+      if (!c) return;
+
+      c.t += dt;
+      var radius = Math.min(1, c.t / CLEANSE_DURATION) * CLEANSE_MAX_RADIUS;
+
+      // 파동 앞면이 닿은 모슬링부터 차례로 사라진다 (enemy.js 의 기존 사망 연출)
+      if (MG.Enemy && MG.Enemy.cleanseAt) MG.Enemy.cleanseAt(c.x, c.y, radius);
+
+      if (c.t >= CLEANSE_DURATION) this.cleanse = null;
     },
 
     /* v0.1.1: DEBUG_MOBILE_LAYOUT 이 true 일 때만 동작하는 개발용 정보 패널.
@@ -3431,13 +4045,92 @@ body:not(.mg-touch) .attack-button {
 
       MG.Map.renderFireflies(ctx, cam, t);
 
+      // PHASE 8.1: 정화 파동은 월드 좌표에 그린다 (카메라 변환이 아직 살아있는
+      // 이 지점이어야 돌을 중심으로 정확히 퍼진다)
+      this.renderCleanseWave(ctx);
+
       // DEBUG_COMBAT 이 true 일 때만 그려진다 (combat.js 내부에서 조기 반환) —
       // 카메라 변환이 아직 적용된 상태여야 히트박스가 월드 좌표와 정확히 겹친다.
       if (MG.Combat && MG.Combat.renderDebug) MG.Combat.renderDebug(ctx, MG.Player);
 
       ctx.restore();
 
+      this.drawAtmosphere(ctx);   // PHASE 8.1-C: 정화 전/후 공기감
       this.drawVignette(ctx);
+      this.drawCleanseFlash(ctx); // 활성화 순간의 아주 짧은 섬광 (맨 위)
+    },
+
+    /* PHASE 8.1: 달의 돌에서 퍼져나가는 정화 파동. 새 파티클 엔진이 아니라
+       캔버스 원 두어 개다 — 안쪽은 옅게 채워 "지나간 자리"를, 앞면은 또렷한
+       테두리로 "지금 지나가는 곳"을 보여준다. 세로 화면에서도 한눈에 읽힌다. */
+    renderCleanseWave: function (ctx) {
+      var c = this.cleanse;
+      if (!c) return;
+
+      var p = Math.min(1, c.t / CLEANSE_DURATION);
+      var r = p * CLEANSE_MAX_RADIUS;
+      var fade = 1 - p;                 // 퍼질수록 옅어진다
+      if (r <= 1) return;
+
+      ctx.save();
+
+      // 파동이 훑고 지나간 안쪽 — 은은한 달빛이 남는다
+      var inner = Math.max(0, r - 52);
+      var g = ctx.createRadialGradient(c.x, c.y, inner, c.x, c.y, r);
+      g.addColorStop(0, 'rgba(190, 226, 255, 0)');
+      g.addColorStop(0.72, 'rgba(202, 232, 255, ' + (0.16 * fade).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(238, 249, 255, ' + (0.36 * fade).toFixed(3) + ')');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 파동 앞면 — 두꺼운 테두리 + 안쪽에 가는 흰 선을 겹쳐 속도감을 준다
+      ctx.strokeStyle = 'rgba(226, 244, 255, ' + (0.85 * fade).toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.55 * fade).toFixed(3) + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, Math.max(1, r - 6), 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    },
+
+    /* 활성화 직후 아주 짧게 화면 전체를 밝히는 섬광 (0.18초). 게임을 멈추지
+       않으며, 알파가 낮아 눈이 부시지 않는다. */
+    drawCleanseFlash: function (ctx) {
+      var c = this.cleanse;
+      if (!c || c.t > CLEANSE_FLASH) return;
+      var a = (1 - c.t / CLEANSE_FLASH) * 0.30;
+      ctx.fillStyle = 'rgba(226, 242, 255, ' + a.toFixed(3) + ')';
+      ctx.fillRect(0, 0, INTERNAL_W, INTERNAL_H);
+    },
+
+    /* PHASE 8.1-C: 정화 전/후의 공기감 대비.
+       색을 통째로 바꾸지 않고 아주 얇은 레이어 하나만 덮는다 —
+       정화 전에는 차갑게 눌러 무겁게, 정화 후에는 달빛으로 살짝 들어올린다. */
+    drawAtmosphere: function (ctx) {
+      var W = INTERNAL_W, H = INTERNAL_H;
+      var a = this.atmosphere;
+
+      if (a < 0.999) {
+        // 정화 전 — 푸른기 도는 어둠으로 살짝 가라앉힌다
+        ctx.fillStyle = 'rgba(6, 14, 24, ' + (0.18 * (1 - a)).toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (a > 0.001) {
+        // 정화 후 — 위에서 달빛이 스며든 것처럼 옅게 밝힌다
+        var lift = ctx.createLinearGradient(0, 0, 0, H);
+        lift.addColorStop(0, 'rgba(186, 216, 255, ' + (0.15 * a).toFixed(3) + ')');
+        lift.addColorStop(1, 'rgba(186, 216, 255, ' + (0.05 * a).toFixed(3) + ')');
+        ctx.fillStyle = lift;
+        ctx.fillRect(0, 0, W, H);
+      }
     },
 
     /* PHASE 4에서 실제 숲 맵(map.js)으로 교체될 임시 분위기 배경.
@@ -3480,12 +4173,19 @@ body:not(.mg-touch) .attack-button {
       }
     },
 
-    /* 화면 가장자리 비네트 — 배경/플레이어 위에 항상 마지막으로 덮는다 */
+    /* 화면 가장자리 비네트 — 배경/플레이어 위에 항상 마지막으로 덮는다.
+       PHASE 8.1-C: 정화 전에는 더 좁고 짙게(압박감), 정화 후에는 더 넓고
+       옅게(트인 느낌) 바뀐다. atmosphere 가 0→1 로 서서히 움직이므로
+       전환도 뚝 끊기지 않고 자연스럽게 이어진다. */
     drawVignette: function (ctx) {
       var W = INTERNAL_W, H = INTERNAL_H;
-      var vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+      var a = this.atmosphere;
+      var inner = H * (0.30 + 0.14 * a);   // 0.30 → 0.44 (밝아질수록 가장자리만 남는다)
+      var edge = 0.68 - 0.34 * a;          // 0.68 → 0.34
+
+      var vig = ctx.createRadialGradient(W / 2, H / 2, inner, W / 2, H / 2, H * 0.95);
       vig.addColorStop(0, 'rgba(0,0,0,0)');
-      vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+      vig.addColorStop(1, 'rgba(0,0,0,' + edge.toFixed(3) + ')');
       ctx.fillStyle = vig;
       ctx.fillRect(0, 0, W, H);
     }
@@ -3515,7 +4215,7 @@ body:not(.mg-touch) .attack-button {
       if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();  // 모슬링 배치 (맵 충돌 데이터 필요 — Map 이후)
       MG.UI.init();                     // 오버레이 / 방향 경고 (Game 이후에 초기화)
 
-      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 7');
+      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 8.1');
     } catch (err) {
       console.error('[MG] 초기화 실패:', err);
     }
