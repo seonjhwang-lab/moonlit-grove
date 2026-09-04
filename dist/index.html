@@ -123,6 +123,12 @@ html, body {
 .hud-left  { left:  calc(2.6% + env(safe-area-inset-left)); }
 .hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
 
+/* PHASE 9.3: 플레이 중 HUD 에는 버전을 보이지 않는다 — 우상단의 "v0.1.11" 은
+   개발 빌드처럼 보였다. 요소와 ui.js 의 갱신 로직은 그대로 둔다(버전은 여전히
+   MG.Game.VERSION 에서 이 요소로 흘러 들어온다). 플레이어에게 보이는 버전은
+   타이틀 화면의 .game-version 하나뿐이다. */
+#hud-version { display: none; }
+
 /* --------------------------------------------------------------------------
    토스트 (PHASE 8) — 잠깐 떴다 사라지는 알림.
    세로 화면 상단 1/4 지점에 놓아 하트(맨 위)와도, 조이스틱(하단 45%)/
@@ -201,6 +207,48 @@ html, body {
   transform: translate(-50%, 0);
 }
 .hud-victory[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
+   재시작 권유 (PHASE 9.1) — 정화 후 시작 공터로 돌아왔을 때만 뜬다.
+   메뉴/패널이 아니라 "탭할 수 있는 한 줄 문구"다. 화면 위쪽 26% 에 두어
+   조이스틱(하단 45%)과 공격 버튼(우하단) 어느 쪽과도 겹치지 않고,
+   엄지로 한 번 누르기 충분한 높이(≈46px)를 확보한다.
+   -------------------------------------------------------------------------- */
+
+.hud-restart {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  transform: translate(-50%, -6px);
+  max-width: 88%;
+  white-space: nowrap;
+
+  padding: 0.7em 1.6em;          /* 작은 탭 타깃이 되지 않도록 넉넉히 */
+  font-family: var(--mg-font-display);
+  font-size: clamp(14px, 2.9vh, 22px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--mg-moon);
+
+  background: var(--mg-panel);
+  border: 1px solid rgba(207, 228, 255, 0.42);
+  border-radius: 999px;          /* 버튼보다는 "떠 있는 문구"에 가깝게 */
+  box-shadow: 0 0 16px rgba(120, 180, 255, 0.22);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  z-index: 18;
+
+  opacity: 0;
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+.hud-restart.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.hud-restart:active {
+  filter: brightness(1.15);
+}
+.hud-restart[hidden] { display: none; }
 
 /* --------------------------------------------------------------------------
    오버레이 (타이틀 / 대화 / 결과 등 공통)
@@ -409,16 +457,22 @@ body:not(.mg-touch) .attack-button {
         <!-- HUD: 좌상단 하트(PHASE 7), 우상단 버전 -->
         <div id="hud">
           <div id="hud-hearts" class="hud-slot hud-left"></div>
-          <div id="hud-version" class="hud-slot hud-right">v0.1.8</div>
+          <div id="hud-version" class="hud-slot hud-right">v0.1.11</div>
         </div>
 
         <!-- PHASE 8: 임시 알림(달의 돌 발견 등). ui.js 의 showToast() 가
              내용을 채우고 스스로 사라진다 — 상시 목표 패널이 아니다. -->
         <div id="hud-toast" class="hud-toast" hidden></div>
 
-        <!-- PHASE 8.1: 정화 완료 문구. 한 번 뜨면 계속 남지만 조작을 가리지
-             않는다(pointer-events: none). 게임 오버 메뉴가 아니다. -->
+        <!-- PHASE 8.1: 정화 완료 문구. 잠깐 떴다 스스로 사라지며 조작을
+             가리지 않는다(pointer-events: none). 게임 오버 메뉴가 아니다. -->
         <div id="hud-victory" class="hud-victory" hidden></div>
+
+        <!-- PHASE 9.1: 정화 후 시작 공터로 돌아오면 뜨는 재시작 권유.
+             "모험 시작" 버튼과 같은 click 경로를 쓰려고 button 을 쓴다
+             (#ui-layer button 은 이미 pointer-events: auto). 모달/메뉴가 아니라
+             탭할 수 있는 한 줄 문구다. -->
+        <button id="hud-restart" class="hud-restart" type="button" hidden></button>
 
         <!-- DEBUG_MOBILE_LAYOUT 이 true 일 때만 game.js 가 내용을 채우고 보여준다 -->
         <pre id="debug-panel" class="debug-panel" hidden></pre>
@@ -438,7 +492,7 @@ body:not(.mg-touch) .attack-button {
             <h1 class="game-title">달빛 숲</h1>
             <p class="game-subtitle">달빛 숲의 수호자</p>
             <button id="btn-start" class="ui-button" type="button">모험 시작</button>
-            <p class="game-version">Prototype 0.1.8</p>
+            <p class="game-version">Prototype 0.1.11</p>
           </div>
         </div>
 
@@ -468,14 +522,62 @@ body:not(.mg-touch) .attack-button {
   'use strict';
   var MG = global.MG = global.MG || {};
 
+  /* PHASE 9.2: 앰비언스(밤 숲 공기) 설정.
+     "음악"이 아니라 "방 톤"이다 — 플레이어가 소리가 켜졌다고 의식하면 실패다.
+     그래서 효과음(검 0.5 / 피격 0.22 / 접촉 0.26)의 10~15% 수준으로만 깐다.
+     모드는 두 개뿐이고, 모드가 바뀌어도 노드를 새로 만들지 않는다 —
+     이미 있는 체인의 값만 2초에 걸쳐 옮긴다(setAmbientMode 참고). */
+  var AMBIENT_FADE = 2.0;       // 초 — 모드 전환 / 페이드인에 걸리는 시간
+  var AMBIENT = {
+    forest: {
+      windFreq: 320,            // Hz — 낮게 눌러 "멀리서 움직이는 공기"로
+      windGain: 0.035,
+      cricketWave: 'sine',
+      cricketFreq: 4400,        // 건조하고 조심스러운 밤벌레
+      cricketGain: 0.02,
+      cricketDecay: 0.05,       // 초 (0.03~0.08 범위)
+      cricketMin: 4.0,          // 초 — 다음 울음까지 최소/최대 간격
+      cricketMax: 8.0
+    },
+    cleansed: {
+      windFreq: 620,            // 더 열리고 가벼운 공기
+      windGain: 0.025,          // 정화 후에는 일부러 더 조용하다
+      cricketWave: 'triangle',  // 사인보다 살짝 부드럽게
+      cricketFreq: 3600,
+      cricketGain: 0.015,
+      cricketDecay: 0.08,       // 여운이 조금 더 길다
+      cricketMin: 6.0,          // 더 느긋하게 운다
+      cricketMax: 11.0
+    }
+  };
+
   var Audio = {
     ctx: null,
     unlocked: false,
     _noiseBuffer: null,
 
+    /* PHASE 9.2: 앰비언스는 "단 하나"만 존재한다.
+       _ambient 가 null 이 아니면 이미 돌고 있다는 뜻이며, 어떤 경로로도
+       두 번째 체인을 만들지 않는다(가시성 토글/재시작/모드 변경 모두). */
+    _ambient: null,             // { src, filter, gain } — 지속 노드는 이 셋뿐
+    _ambientMode: 'forest',
+    _cricketTimer: null,        // 밤벌레 자체 예약 타이머 (항상 최대 1개)
+    _ambientHidden: false,      // 탭이 가려져 앰비언스를 죽여둔 상태인가
+
     /* main.js 부팅 시 호출된다. 여기서는 AudioContext 를 만들지 않는다 —
-       사용자 제스처 없이 생성하면 대부분의 브라우저가 suspended 상태로 묶어둔다. */
-    init: function () {},
+       사용자 제스처 없이 생성하면 대부분의 브라우저가 suspended 상태로 묶어둔다.
+       PHASE 9.2: 가시성 리스너만 여기서 한 번 등록한다(노드는 만들지 않는다).
+       unlock() 에서 등록하면 재호출 시 리스너가 중복될 수 있다. */
+    init: function () {
+      var self = this;
+      try {
+        document.addEventListener('visibilitychange', function () {
+          self._onAmbientVisibility();
+        });
+      } catch (e) {
+        // 리스너 등록 실패도 게임을 막지 않는다
+      }
+    },
 
     /* 사용자의 첫 탭/클릭(예: "모험 시작" 버튼)에서 호출해야 한다. */
     unlock: function () {
@@ -490,6 +592,11 @@ body:not(.mg-touch) .attack-button {
       } catch (e) {
         this.ctx = null; // 오디오 없이도 게임은 계속된다
       }
+
+      // PHASE 9.2: 앰비언스는 오직 이 시점(=실제 제스처로 unlock 이 성공한 뒤)에만
+      // 시작된다. try 블록 밖에 두어, 혹시 실패하더라도 위에서 만든 ctx 를
+      // 날려버리지 않게 한다(효과음은 계속 나와야 한다).
+      if (this.unlocked) this.startAmbience();
     },
 
     _buildNoiseBuffer: function () {
@@ -498,6 +605,206 @@ body:not(.mg-touch) .attack-button {
       var data = buf.getChannelData(0);
       for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
       return buf;
+    },
+
+    /* ==================================================== PHASE 9.2 앰비언스 */
+
+    /* 지속되는 "숲의 숨" 한 겹을 만든다. 지속 노드는 정확히 셋뿐이다:
+         노이즈 소스(루프) → 로우패스 필터 → 게인 → 스피커
+       이미 돌고 있으면 아무것도 하지 않는다 — 어떤 경로로 몇 번을 불러도
+       두 번째 체인은 생기지 않는다. 새 노이즈 버퍼도 만들지 않고 기존
+       _noiseBuffer 를 그대로 재사용한다. */
+    startAmbience: function () {
+      if (!this.ctx || !this._noiseBuffer) return;
+      if (this._ambient) return;                 // 이미 하나 있다 — 절대 중복 생성 금지
+
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+        var cfg = AMBIENT[this._ambientMode] || AMBIENT.forest;
+
+        var src = ctx.createBufferSource();
+        src.buffer = this._noiseBuffer;
+        src.loop = true;
+        // 0.2초짜리 짧은 버퍼를 그대로 반복하면 주기가 규칙적으로 들린다.
+        // 재생 속도를 낮춰 반복 주기를 늘리고 스펙트럼도 함께 낮춰,
+        // 아래 로우패스와 합쳐지면 "화이트노이즈"가 아니라 먼 공기처럼 들린다.
+        src.playbackRate.value = 0.35;
+
+        var filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 0.8;
+        // setValueAtTime 대신 .value 로 직접 넣는다 — 즉시 반영되므로 이후
+        // setAmbientMode() 가 "현재 값"을 읽어 이어붙일 때 기본값(350Hz)이
+        // 잘못 잡히지 않는다.
+        filter.frequency.value = cfg.windFreq;
+
+        var gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(cfg.windGain, now + AMBIENT_FADE);
+
+        src.connect(filter).connect(gain).connect(ctx.destination);
+        src.start(now);
+
+        this._ambient = { src: src, filter: filter, gain: gain };
+        this._ambientHidden = false;
+        this.scheduleNextCricket();
+      } catch (e) {
+        this._ambient = null;   // 실패해도 게임은 그대로 진행된다
+      }
+    },
+
+    /* 앰비언스를 완전히 내린다. 평상시 흐름에서는 쓰지 않는다(모드만 바꾼다) —
+       오디오를 통째로 정리해야 하는 예외 상황을 위한 대칭 함수다. */
+    stopAmbience: function () {
+      if (this._cricketTimer) {
+        global.clearTimeout(this._cricketTimer);
+        this._cricketTimer = null;
+      }
+      var a = this._ambient;
+      this._ambient = null;
+      if (!a) return;
+      try {
+        a.src.stop();
+        a.src.disconnect();
+        a.filter.disconnect();
+        a.gain.disconnect();
+      } catch (e) {
+        // 이미 정리된 노드일 수 있다 — 조용히 넘어간다
+      }
+    },
+
+    /* 'forest' | 'cleansed' — 노드를 다시 만들지 않고, 살아있는 체인의 값만
+       AMBIENT_FADE(2초)에 걸쳐 부드럽게 옮긴다. 몇 번을 불러도 노드 수는
+       그대로다. 아직 앰비언스가 시작되기 전이라면 모드만 기억해 두었다가
+       startAmbience() 가 그 모드로 시작한다. */
+    setAmbientMode: function (mode) {
+      if (mode !== 'forest' && mode !== 'cleansed') return;
+      this._ambientMode = mode;
+
+      var a = this._ambient;
+      if (!a || !this.ctx) return;
+
+      try {
+        var cfg = AMBIENT[mode];
+        var now = this.ctx.currentTime;
+
+        a.filter.frequency.cancelScheduledValues(now);
+        a.filter.frequency.setValueAtTime(a.filter.frequency.value, now);
+        a.filter.frequency.linearRampToValueAtTime(cfg.windFreq, now + AMBIENT_FADE);
+
+        // 탭이 가려져 있는 동안에는 음량을 건드리지 않는다(무음을 유지해야 한다).
+        // 다시 보이게 될 때 _onAmbientVisibility() 가 현재 모드 음량으로 올린다.
+        if (!this._ambientHidden) {
+          a.gain.gain.cancelScheduledValues(now);
+          a.gain.gain.setValueAtTime(a.gain.gain.value, now);
+          a.gain.gain.linearRampToValueAtTime(cfg.windGain, now + AMBIENT_FADE);
+        }
+      } catch (e) {
+        // 값 전환 실패는 무시한다 — 소리만 이전 상태로 남을 뿐이다
+      }
+    },
+
+    /* 밤벌레 예약 — setInterval 로 영원히 도는 대신, 한 번 울 때마다 다음 시각을
+       무작위로 다시 잡는 자체 예약 방식이다. 타이머는 언제나 최대 하나이고,
+       탭이 가려지면 아예 예약하지 않는다. */
+    scheduleNextCricket: function () {
+      if (!this.ctx || !this._ambient) return;
+      if (this._ambientHidden) return;
+      if (this._cricketTimer) return;            // 스케줄러 중복 방지
+
+      var self = this;
+      var cfg = AMBIENT[this._ambientMode] || AMBIENT.forest;
+      var wait = (cfg.cricketMin + Math.random() * (cfg.cricketMax - cfg.cricketMin)) * 1000;
+
+      this._cricketTimer = global.setTimeout(function () {
+        self._cricketTimer = null;
+        self.playAmbientCricket();
+        self.nudgeAmbientWind();
+        self.scheduleNextCricket();              // 다음 울음을 새로 예약한다
+      }, wait);
+    },
+
+    /* 아주 짧은 두 번의 펄스로 "찌-찍" 하는 밤벌레 하나. 매번 새로 만들고
+       stop() 으로 스스로 끝나므로 노드가 쌓이지 않는다(브라우저가 회수한다).
+       보통 동시에 존재하는 울음은 하나뿐이다. */
+    playAmbientCricket: function () {
+      if (!this.ctx || this._ambientHidden) return;
+
+      try {
+        var ctx = this.ctx;
+        var cfg = AMBIENT[this._ambientMode] || AMBIENT.forest;
+        var now = ctx.currentTime;
+
+        for (var i = 0; i < 2; i++) {
+          var start = now + i * 0.055;
+
+          var osc = ctx.createOscillator();
+          osc.type = cfg.cricketWave;
+          // 두 번째 펄스를 살짝 높여 기계적으로 반복되는 느낌을 없앤다
+          osc.frequency.setValueAtTime(cfg.cricketFreq * (i === 0 ? 1 : 1.02), start);
+
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, start);
+          g.gain.exponentialRampToValueAtTime(cfg.cricketGain, start + 0.006);
+          g.gain.exponentialRampToValueAtTime(0.0001, start + cfg.cricketDecay);
+
+          osc.connect(g).connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + cfg.cricketDecay + 0.02);
+        }
+      } catch (e) {
+        // 무음으로 넘어간다
+      }
+    },
+
+    /* 바람 필터를 아주 살짝 흔든다. 전용 LFO 오실레이터를 상시로 두지 않기 위해,
+       이미 돌고 있는 밤벌레 예약에 얹어 가끔 한 번씩만 값을 옮긴다.
+       (지속 노드를 늘리지 않으면서 루프의 규칙성을 덮는 최소한의 변화) */
+    nudgeAmbientWind: function () {
+      var a = this._ambient;
+      if (!a || !this.ctx || this._ambientHidden) return;
+      try {
+        var cfg = AMBIENT[this._ambientMode] || AMBIENT.forest;
+        var now = this.ctx.currentTime;
+        var target = cfg.windFreq * (0.9 + Math.random() * 0.2);   // ±10%
+        a.filter.frequency.cancelScheduledValues(now);
+        a.filter.frequency.setValueAtTime(a.filter.frequency.value, now);
+        a.filter.frequency.linearRampToValueAtTime(target, now + 3.0);
+      } catch (e) {
+        // 무시한다
+      }
+    },
+
+    /* 탭이 가려지면 앰비언스를 무음으로 내리고 밤벌레 예약을 멈춘다.
+       다시 보이면 원래 음량으로 올리고 예약을 되살린다 — 이때도 노드는
+       새로 만들지 않는다(같은 체인의 게인만 오르내린다). */
+    _onAmbientVisibility: function () {
+      if (!this.ctx || !this._ambient) return;   // 아직 시작 전이면 할 일이 없다
+
+      var hidden = !!document.hidden;
+      if (hidden === this._ambientHidden) return;
+      this._ambientHidden = hidden;
+
+      try {
+        var cfg = AMBIENT[this._ambientMode] || AMBIENT.forest;
+        var now = this.ctx.currentTime;
+        var g = this._ambient.gain.gain;
+        g.cancelScheduledValues(now);
+        g.setValueAtTime(g.value, now);
+        g.linearRampToValueAtTime(hidden ? 0.0001 : cfg.windGain, now + 0.35);
+      } catch (e) {
+        // 무시한다
+      }
+
+      if (hidden) {
+        if (this._cricketTimer) {
+          global.clearTimeout(this._cricketTimer);
+          this._cricketTimer = null;
+        }
+      } else {
+        this.scheduleNextCricket();
+      }
     },
 
     /* 검 휘두르는 소리 — 화이트노이즈를 대역통과 필터로 빠르게 쓸어내려
@@ -3496,6 +3803,7 @@ body:not(.mg-touch) .attack-button {
       this.el.hearts = document.getElementById('hud-hearts');
       this.el.toast = document.getElementById('hud-toast');     // PHASE 8
       this.el.victory = document.getElementById('hud-victory'); // PHASE 8.1
+      this.el.restart = document.getElementById('hud-restart'); // PHASE 9.1
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -3513,6 +3821,18 @@ body:not(.mg-touch) .attack-button {
           e.preventDefault();
           if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
           if (MG.Game) MG.Game.startAdventure();
+        });
+      }
+
+      /* PHASE 9.1: "다시 모험하기" — 새 입력 레이어를 만들지 않고 "모험 시작"
+         버튼과 완전히 같은 경로를 쓴다(#ui-layer button 은 style.css 에서
+         이미 pointer-events: auto 이고, click 하나면 터치/데스크톱 모두에서
+         중복 없이 안정적으로 동작한다). */
+      if (this.el.restart) {
+        this.el.restart.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
+          if (MG.Game && MG.Game.restartSession) MG.Game.restartSession();
         });
       }
 
@@ -3644,6 +3964,63 @@ body:not(.mg-touch) .attack-button {
           el.hidden = true;                                      // 완전히 사라진다
         }, FADE + 50);
       }, FADE + hold);              // 페이드인이 끝난 뒤부터 유지 시간을 센다
+    },
+
+    /* PHASE 9.1: 승리 문구를 예약된 타이머까지 포함해 즉시 내린다.
+       (세션 리셋 때 호출된다 — 남은 타이머가 나중에 엉뚱하게 발화하면
+        다음 판의 승리 문구를 일찍 지워버릴 수 있다) */
+    hideVictory: function () {
+      if (this._victoryHold) global.clearTimeout(this._victoryHold);
+      if (this._victoryHide) global.clearTimeout(this._victoryHide);
+      this._victoryHold = null;
+      this._victoryHide = null;
+
+      var el = this.el.victory || document.getElementById('hud-victory');
+      if (!el) return;
+      el.classList.remove('is-visible');
+      el.hidden = true;
+    },
+
+    /* 토스트도 같은 이유로 타이머까지 정리하고 즉시 내린다. */
+    hideToast: function () {
+      if (this._toastHold) global.clearTimeout(this._toastHold);
+      if (this._toastHide) global.clearTimeout(this._toastHide);
+      this._toastHold = null;
+      this._toastHide = null;
+
+      var el = this.el.toast || document.getElementById('hud-toast');
+      if (!el) return;
+      el.classList.remove('is-visible');
+      el.hidden = true;
+    },
+
+    /* PHASE 9.1: "다시 모험하기" 문구를 띄운다. 스스로 사라지지 않는다 —
+       game.js 가 플레이어가 시작 공터를 벗어나는 순간 내린다. */
+    showRestartPrompt: function (text) {
+      if (!this.el.restart) this.el.restart = document.getElementById('hud-restart');
+      if (!this.el.restart) return;
+
+      var el = this.el.restart;
+      if (this._restartHide) { global.clearTimeout(this._restartHide); this._restartHide = null; }
+
+      el.textContent = text;
+      el.hidden = false;
+      void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록
+      el.classList.add('is-visible');
+    },
+
+    /* immediate=true 면 페이드 없이 즉시 감춘다(세션 리셋용). */
+    hideRestartPrompt: function (immediate) {
+      if (!this.el.restart) this.el.restart = document.getElementById('hud-restart');
+      if (!this.el.restart) return;
+
+      var el = this.el.restart;
+      if (this._restartHide) { global.clearTimeout(this._restartHide); this._restartHide = null; }
+      el.classList.remove('is-visible');
+
+      if (immediate) { el.hidden = true; return; }
+      // 페이드아웃(style.css 의 500ms)이 끝난 뒤에 DOM 에서 뺀다
+      this._restartHide = global.setTimeout(function () { el.hidden = true; }, 550);
     }
   };
 
@@ -3689,8 +4066,16 @@ body:not(.mg-touch) .attack-button {
   var CLEANSE_FLASH = 0.18;        // 초 — 활성화 순간의 짧은 화면 섬광
   var ATMOSPHERE_FADE = 1.4;       // 초 — 숲이 밝아지는 데 걸리는 시간
 
+  /* PHASE 9.1: 정화가 끝난 뒤, 플레이어가 스스로 처음 출발했던 공터로 돌아오면
+     "다시 모험하기"를 조용히 권한다. 강제하지 않는다 — 정화된 숲을 마음껏
+     돌아다니다가 돌아왔을 때만 나타난다.
+     경계에서 문구가 깜빡이지 않도록 들어올 때와 나갈 때 반경을 다르게 둔다
+     (모슬링 감지의 DETECT_RADIUS/LEAVE_RADIUS 와 같은 히스테리시스 방식). */
+  var RESTART_ENTER_RADIUS = 70;   // 이 안으로 들어오면 문구가 뜬다
+  var RESTART_LEAVE_RADIUS = 92;   // 이 밖으로 나가야 사라진다
+
   var Game = {
-    VERSION: '0.1.8',
+    VERSION: '0.1.11',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -3722,6 +4107,10 @@ body:not(.mg-touch) .attack-button {
 
     // 0 = 정화 전(어둡고 무겁게) → 1 = 정화 후(달빛이 든 것처럼 밝게)
     atmosphere: 0,
+
+    // PHASE 9.1: "다시 모험하기" 문구가 지금 떠 있는가 (DOM 을 매 프레임
+    // 건드리지 않고 상태가 바뀔 때만 갱신하기 위한 캐시)
+    _restartPromptShown: false,
 
     _lastTs: 0,
     _rafId: 0,
@@ -3898,6 +4287,7 @@ body:not(.mg-touch) .attack-button {
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
       this.updateMoonstone(dt);
       this.updateCleansing(dt);
+      this.updateRestartPrompt();
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
     },
@@ -3954,8 +4344,11 @@ body:not(.mg-touch) .attack-button {
         MG.Enemy.spawnParticles(m.x, m.y - 4, 18, 0, -1, 'reward');
       }
 
-      // D. 임시 토스트 — 퀘스트 로그가 아니라 잠깐 떴다 사라지는 알림
-      if (MG.UI && MG.UI.showToast) MG.UI.showToast('달의 돌을 발견했다');
+      // D. PHASE 9.3: 여기서 '달의 돌을 발견했다' 토스트를 띄우지 않는다.
+      //    돌을 치는 순간 곧바로 정화가 시작되므로, 토스트와 '숲이 정화되었다'가
+      //    한 화면에 겹쳐 뜨면서 가장 중요한 순간의 메시지가 둘로 쪼개졌다.
+      //    이 결말에서는 '숲이 정화되었다' 하나만 남긴다.
+      //    (MG.UI.showToast 자체는 그대로 살아 있다 — 다른 이벤트에서 쓸 수 있다.)
 
       // E. PHASE 8.1: 그리고 숲 전체가 정화된다 — 이 게임의 결말.
       this.startCleansing(m.x, m.y);
@@ -3971,7 +4364,92 @@ body:not(.mg-touch) .attack-button {
 
       this.hitStop(0.08);
 
+      // PHASE 9.2: 숲의 공기도 함께 바뀐다 — 새 소리를 켜는 게 아니라,
+      // 이미 깔려 있던 앰비언스 한 겹의 값만 2초에 걸쳐 옮긴다.
+      if (MG.Audio && MG.Audio.setAmbientMode) MG.Audio.setAmbientMode('cleansed');
+
       if (MG.UI && MG.UI.showVictory) MG.UI.showVictory('숲이 정화되었다');
+    },
+
+    /* PHASE 9.1: 정화가 끝난 뒤 "다시 모험하기" 문구를 띄울지 정한다.
+       조건은 두 가지뿐이다 — 이미 정화되었고(cleansed), 플레이어가 처음
+       출발했던 공터(MG.Map.spawn) 근처로 스스로 돌아왔을 때.
+       정화 직후에는 플레이어가 달의 돌(700,400) 옆에 있어 스폰(200,590)에서
+       430px 넘게 떨어져 있으므로, 구조적으로 곧바로 뜨지 않는다 — 정화된 숲을
+       원하는 만큼 돌아다닌 뒤 돌아왔을 때만 나타난다.
+       DOM 은 상태가 바뀌는 순간에만 건드린다(매 프레임 접근하지 않는다). */
+    updateRestartPrompt: function () {
+      var show = false;
+
+      if (this.cleansed && !this.cleanse && MG.Map && MG.Map.spawn &&
+          MG.Player && MG.Player.state !== 'DEAD') {
+        var sp = MG.Map.spawn;
+        var d = Math.hypot(MG.Player.x - sp.x, MG.Player.y - sp.y);
+        // 히스테리시스: 들어올 땐 70, 나갈 땐 92 — 경계에서 깜빡이지 않는다
+        show = this._restartPromptShown ? (d <= RESTART_LEAVE_RADIUS)
+                                        : (d <= RESTART_ENTER_RADIUS);
+      }
+
+      if (show === this._restartPromptShown) return;
+      this._restartPromptShown = show;
+
+      if (!MG.UI) return;
+      if (show) {
+        // 실제 플레이에서 둘이 동시에 뜰 일은 없지만(토스트는 달의 돌 옆에서만,
+        // 이 문구는 스폰 근처에서만 뜬다), 화면 위치가 가까우므로 혹시 남아 있는
+        // 토스트가 있으면 먼저 치운다 — 어차피 지난 알림이다.
+        if (MG.UI.hideToast) MG.UI.hideToast();
+        if (MG.UI.showRestartPrompt) MG.UI.showRestartPrompt('다시 모험하기');
+      } else {
+        if (MG.UI.hideRestartPrompt) MG.UI.hideRestartPrompt();
+      }
+    },
+
+    /* PHASE 9.1: 세션 리셋 — 브라우저를 새로고침하지 않고 처음 상태로 되돌린다.
+       초기화 로직을 새로 쓰지 않고 기존 진입점(Player.init / Enemy.init /
+       Input.reset)을 그대로 재사용한다. 저장/불러오기는 없다.
+       순서가 중요하다: Enemy.init() 은 cleansed 가 true 면 모슬링을 만들지 않고
+       조기 반환하므로(정화 후 부활에서 적이 돌아오지 않게 하는 장치),
+       반드시 cleansed 를 먼저 내린 뒤에 호출해야 한다. */
+    restartSession: function () {
+      // 1) 정화/목표 상태를 먼저 되돌린다
+      this.cleansed = false;
+      this.cleanse = null;
+      this.atmosphere = 0;
+      this.moonstoneFound = false;
+      this.hitStopT = 0;
+
+      // 2) 달의 돌을 다시 잠들게 한다
+      if (MG.Map && MG.Map.moonstone) {
+        MG.Map.moonstone.state = 'IDLE';
+        MG.Map.moonstone.activeT = 0;
+      }
+
+      // 3) 플레이어와 모슬링 — 기존 초기화 함수를 그대로 쓴다
+      //    (Player.init 이 위치/HP/공격/무적/어시스트 상태를 모두 되돌리고,
+      //     Enemy.init 이 9마리를 원래 스폰 지점에 다시 배치한다)
+      if (MG.Player && MG.Player.init) MG.Player.init();
+      if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();
+      if (MG.Enemy && MG.Enemy.particles) MG.Enemy.particles.length = 0;
+
+      // 4) 문구를 누르느라 눌려 있던 입력이 남지 않도록 정리한다
+      if (MG.Input && MG.Input.reset) MG.Input.reset();
+
+      // PHASE 9.2: 숲의 공기도 처음 상태로 되돌린다 (앰비언스를 껐다 켜지
+      // 않는다 — 같은 체인의 값만 되돌아간다)
+      if (MG.Audio && MG.Audio.setAmbientMode) MG.Audio.setAmbientMode('forest');
+
+      // 5) UI 정리 — 승리 문구/토스트/재시작 문구를 모두 즉시 내린다
+      this._restartPromptShown = false;
+      if (MG.UI) {
+        if (MG.UI.hideRestartPrompt) MG.UI.hideRestartPrompt(true);
+        if (MG.UI.hideVictory) MG.UI.hideVictory();
+        if (MG.UI.hideToast) MG.UI.hideToast();
+        if (MG.UI.renderHearts && MG.Player) MG.UI.renderHearts(MG.Player.hp, MG.Player.maxHp);
+      }
+
+      // 타이틀로 되돌아가지 않는다 — 곧바로 다시 플레이한다
+      this.state = 'PLAY';
     },
 
     /* 파동을 퍼뜨리고(=닿는 순서대로 모슬링을 정화하고) 숲을 서서히 밝힌다. */
@@ -4226,7 +4704,7 @@ body:not(.mg-touch) .attack-button {
       if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();  // 모슬링 배치 (맵 충돌 데이터 필요 — Map 이후)
       MG.UI.init();                     // 오버레이 / 방향 경고 (Game 이후에 초기화)
 
-      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 8.1');
+      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 9.3');
     } catch (err) {
       console.error('[MG] 초기화 실패:', err);
     }

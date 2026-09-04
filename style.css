@@ -109,6 +109,12 @@ html, body {
 .hud-left  { left:  calc(2.6% + env(safe-area-inset-left)); }
 .hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
 
+/* PHASE 9.3: 플레이 중 HUD 에는 버전을 보이지 않는다 — 우상단의 "v0.1.11" 은
+   개발 빌드처럼 보였다. 요소와 ui.js 의 갱신 로직은 그대로 둔다(버전은 여전히
+   MG.Game.VERSION 에서 이 요소로 흘러 들어온다). 플레이어에게 보이는 버전은
+   타이틀 화면의 .game-version 하나뿐이다. */
+#hud-version { display: none; }
+
 /* --------------------------------------------------------------------------
    토스트 (PHASE 8) — 잠깐 떴다 사라지는 알림.
    세로 화면 상단 1/4 지점에 놓아 하트(맨 위)와도, 조이스틱(하단 45%)/
@@ -187,6 +193,48 @@ html, body {
   transform: translate(-50%, 0);
 }
 .hud-victory[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
+   재시작 권유 (PHASE 9.1) — 정화 후 시작 공터로 돌아왔을 때만 뜬다.
+   메뉴/패널이 아니라 "탭할 수 있는 한 줄 문구"다. 화면 위쪽 26% 에 두어
+   조이스틱(하단 45%)과 공격 버튼(우하단) 어느 쪽과도 겹치지 않고,
+   엄지로 한 번 누르기 충분한 높이(≈46px)를 확보한다.
+   -------------------------------------------------------------------------- */
+
+.hud-restart {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  transform: translate(-50%, -6px);
+  max-width: 88%;
+  white-space: nowrap;
+
+  padding: 0.7em 1.6em;          /* 작은 탭 타깃이 되지 않도록 넉넉히 */
+  font-family: var(--mg-font-display);
+  font-size: clamp(14px, 2.9vh, 22px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--mg-moon);
+
+  background: var(--mg-panel);
+  border: 1px solid rgba(207, 228, 255, 0.42);
+  border-radius: 999px;          /* 버튼보다는 "떠 있는 문구"에 가깝게 */
+  box-shadow: 0 0 16px rgba(120, 180, 255, 0.22);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  z-index: 18;
+
+  opacity: 0;
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+.hud-restart.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.hud-restart:active {
+  filter: brightness(1.15);
+}
+.hud-restart[hidden] { display: none; }
 
 /* --------------------------------------------------------------------------
    오버레이 (타이틀 / 대화 / 결과 등 공통)

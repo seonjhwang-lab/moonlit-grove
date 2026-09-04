@@ -22,6 +22,7 @@
       this.el.hearts = document.getElementById('hud-hearts');
       this.el.toast = document.getElementById('hud-toast');     // PHASE 8
       this.el.victory = document.getElementById('hud-victory'); // PHASE 8.1
+      this.el.restart = document.getElementById('hud-restart'); // PHASE 9.1
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -39,6 +40,18 @@
           e.preventDefault();
           if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
           if (MG.Game) MG.Game.startAdventure();
+        });
+      }
+
+      /* PHASE 9.1: "다시 모험하기" — 새 입력 레이어를 만들지 않고 "모험 시작"
+         버튼과 완전히 같은 경로를 쓴다(#ui-layer button 은 style.css 에서
+         이미 pointer-events: auto 이고, click 하나면 터치/데스크톱 모두에서
+         중복 없이 안정적으로 동작한다). */
+      if (this.el.restart) {
+        this.el.restart.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
+          if (MG.Game && MG.Game.restartSession) MG.Game.restartSession();
         });
       }
 
@@ -170,6 +183,63 @@
           el.hidden = true;                                      // 완전히 사라진다
         }, FADE + 50);
       }, FADE + hold);              // 페이드인이 끝난 뒤부터 유지 시간을 센다
+    },
+
+    /* PHASE 9.1: 승리 문구를 예약된 타이머까지 포함해 즉시 내린다.
+       (세션 리셋 때 호출된다 — 남은 타이머가 나중에 엉뚱하게 발화하면
+        다음 판의 승리 문구를 일찍 지워버릴 수 있다) */
+    hideVictory: function () {
+      if (this._victoryHold) global.clearTimeout(this._victoryHold);
+      if (this._victoryHide) global.clearTimeout(this._victoryHide);
+      this._victoryHold = null;
+      this._victoryHide = null;
+
+      var el = this.el.victory || document.getElementById('hud-victory');
+      if (!el) return;
+      el.classList.remove('is-visible');
+      el.hidden = true;
+    },
+
+    /* 토스트도 같은 이유로 타이머까지 정리하고 즉시 내린다. */
+    hideToast: function () {
+      if (this._toastHold) global.clearTimeout(this._toastHold);
+      if (this._toastHide) global.clearTimeout(this._toastHide);
+      this._toastHold = null;
+      this._toastHide = null;
+
+      var el = this.el.toast || document.getElementById('hud-toast');
+      if (!el) return;
+      el.classList.remove('is-visible');
+      el.hidden = true;
+    },
+
+    /* PHASE 9.1: "다시 모험하기" 문구를 띄운다. 스스로 사라지지 않는다 —
+       game.js 가 플레이어가 시작 공터를 벗어나는 순간 내린다. */
+    showRestartPrompt: function (text) {
+      if (!this.el.restart) this.el.restart = document.getElementById('hud-restart');
+      if (!this.el.restart) return;
+
+      var el = this.el.restart;
+      if (this._restartHide) { global.clearTimeout(this._restartHide); this._restartHide = null; }
+
+      el.textContent = text;
+      el.hidden = false;
+      void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록
+      el.classList.add('is-visible');
+    },
+
+    /* immediate=true 면 페이드 없이 즉시 감춘다(세션 리셋용). */
+    hideRestartPrompt: function (immediate) {
+      if (!this.el.restart) this.el.restart = document.getElementById('hud-restart');
+      if (!this.el.restart) return;
+
+      var el = this.el.restart;
+      if (this._restartHide) { global.clearTimeout(this._restartHide); this._restartHide = null; }
+      el.classList.remove('is-visible');
+
+      if (immediate) { el.hidden = true; return; }
+      // 페이드아웃(style.css 의 500ms)이 끝난 뒤에 DOM 에서 뺀다
+      this._restartHide = global.setTimeout(function () { el.hidden = true; }, 550);
     }
   };
 

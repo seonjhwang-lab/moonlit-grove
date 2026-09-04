@@ -8,12 +8,79 @@ Project:
 
 Current Version:
 
-v0.1.8
+v0.1.11
 
 Current Phase:
 
-Phase 8.1 — The Cleansing (complete micro-adventure loop) — **COMPLETE**
+Phase 9.3 — Final polish pass — **COMPLETE**
 (implemented and verified by Claude Code)
+
+Implemented (Phase 9.3) — two small changes, no new systems:
+
+* **The climax speaks once.** Striking the Moonstone used to fire the toast
+  "달의 돌을 발견했다" *and* the victory line "숲이 정화되었다" at the same
+  moment, splitting the most important beat in the game across two pieces of
+  text. The single `showToast()` call in `activateMoonstone()` is gone. The
+  toast **system** is untouched and still fully callable — verified at runtime
+  by calling `MG.UI.showToast()` directly after the change.
+* **No version number during play.** `#hud-version` is hidden with one CSS
+  rule. The element stays in the DOM and `ui.js` still writes
+  `'v' + MG.Game.VERSION` into it, so version tracking is intact; the player
+  now sees the version only on the title screen (`.game-version`). The
+  top-right corner of the gameplay HUD is empty.
+
+Previously implemented (Phase 9.2):
+
+* **One persistent chain, forever.** The entire ambient bed is exactly three
+  nodes — a looping `BufferSource` (reusing the *existing* 0.2s noise buffer
+  from the SFX code, played at `playbackRate 0.35` so the loop period
+  stretches to ~0.57s and stops sounding like a loop), a `lowpass` filter
+  (`Q 0.8`), and a `gain`. They are created once in `startAmbience()` and
+  never replaced. Mode changes only *ramp parameters* on these same nodes.
+* **No LFO, no interval loop, no per-frame audio work.** Wind drift is a
+  ±10% filter ramp piggy-backed onto the cricket scheduler
+  (`nudgeAmbientWind()`), so nothing extra runs between chirps.
+* **Crickets are self-rescheduling one-shots.** Each chirp is 2 oscillators
+  + 2 gains that call `osc.stop()` on themselves and get garbage collected;
+  a single `setTimeout` handle (`_cricketTimer`) is alive at any moment.
+* **Two modes on the same nodes.** `MG.Audio.setAmbientMode('forest' |
+  'cleansed')` ramps filter frequency and gain over 2s.
+  `MG.Game.startCleansing()` switches to `cleansed`;
+  `MG.Game.restartSession()` switches back to `forest`.
+* **Tab-hidden safety.** A `visibilitychange` listener registered once in
+  `Audio.init()` fades the bed to silence and clears the cricket timer when
+  hidden, and restores on return. It is idempotent (`_ambientHidden` dedupe),
+  and `setAmbientMode()` deliberately skips the gain ramp while hidden so a
+  mode change cannot resurrect audio in a background tab.
+* **Starts only after a real gesture.** `startAmbience()` is called from
+  `unlock()` — and *outside* its try/catch, so an ambience failure can never
+  null the context and take the SFX down with it.
+* Measured: ambient peak amplitude **0.018** vs sword swing **0.319** — the
+  bed sits at ~5.7% of the loudest SFX. See the tuning note below.
+
+Previously implemented (Phase 9.1):
+
+* **Return-home restart prompt** — once `MG.Game.cleansed` is true and the
+  player *voluntarily* walks back within 70px of `MG.Map.spawn` (200, 590),
+  a one-line "다시 모험하기" fades in. Leaving past 92px fades it out; the
+  two different radii are deliberate hysteresis (same idiom as the Mossling
+  `DETECT_RADIUS`/`LEAVE_RADIUS`) so it never flickers on the boundary —
+  measured 0 toggles over 400 frames circling at r=78.
+* **It can never appear immediately after cleansing** — not by a timer, but
+  by geometry: activation happens beside the Moonstone (700, 400), which is
+  ~520px from spawn. The player is free to wander the peaceful grove for as
+  long as they like.
+* **`MG.Game.restartSession()`** — the central reset. Reuses the existing
+  entry points (`Player.init()`, `Enemy.init()`, `Input.reset()`) instead of
+  duplicating init logic. **Order matters:** `Enemy.init()` early-returns
+  while `cleansed` is true (that's what keeps enemies from returning after a
+  post-cleansing death), so `cleansed` must be cleared *first* or the
+  Mosslings never come back.
+* **No page reload** — `location.reload()` is not used anywhere; verified
+  `location.href` is unchanged across a restart.
+* **Input path is the existing one** — the prompt is a `<button>` so it picks
+  up the `#ui-layer button { pointer-events: auto }` rule and a plain `click`
+  listener, exactly like the "모험 시작" button. No new interaction layer.
 
 Implemented (Phase 8.1):
 
@@ -827,10 +894,108 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 8.1 (The Cleansing), v0.1.8 — done, stable. Not yet committed to
-git this pass (verified locally; a commit was intentionally not made —
-see git status/diff in the completion report). Next task is Phase 9
-(모스키 동료 영입, per GAME_DESIGN.md) — not started.
+Phase 9.3 (final polish), v0.1.11 — done, stable. Not yet committed to git
+this pass (verified locally; a commit was intentionally not made). This was
+declared the last gameplay/UI polish pass before release. The larger Phase 9
+(모스키 동료 영입, per GAME_DESIGN.md) remains unstarted.
+
+**One open tuning question for the next pass:** the spec suggested the bed
+should sit around 10–15% of gameplay SFX loudness, but the spec's own
+recommended `windGain` of 0.035 measures at 5.7% of the sword swing, because
+the 320Hz lowpass removes most of the noise energy. 0.035 was kept — erring
+quiet is the safe direction, and this is an aesthetic call that needs a real
+phone speaker to judge. If it turns out to be inaudible on device, raise
+`AMBIENT.forest.windGain` to ~0.06 (and `cleansed` to ~0.045) to land inside
+the stated band. That is a two-number change in `js/audio.js`.
+
+### v0.1.11 — PHASE 9.3: 마지막 폴리시 (출시 전)
+
+Two deliberately tiny changes. Both are worth understanding before anyone
+"tidies" them away:
+
+1. **The discovery toast was removed at the call site, not in the system.**
+   `js/ui.js` still has a complete, working `showToast()`/`hideToast()` pair
+   — it is simply no longer called by anything. That is intentional: the
+   toast is the right tool for a future non-climactic event, and deleting it
+   would mean rewriting it later. If you add a toast back, do not add one to
+   `activateMoonstone()` — that moment belongs to `숲이 정화되었다` alone.
+2. **`#hud-version { display: none; }` is the whole of fix #2.** The element
+   and `ui.js`'s write to it are deliberately left in place so the version
+   still flows from `MG.Game.VERSION` into the DOM (useful for debugging, and
+   it keeps a single source of truth). Do not "clean up" by deleting the
+   element or the ui.js line — flip the CSS rule instead if you ever want the
+   HUD version back.
+
+Note that the title screen's `Prototype 0.1.11` is a hardcoded literal in
+`index.html`, not driven by `VERSION`. That is pre-existing, and the version
+bump procedure (a single sed across `index.html` + the `VERSION` constant +
+cache-busters) already keeps it in sync. Left as-is on purpose — this pass
+was not the place to change version plumbing.
+
+Regression tested at runtime after the change: movement, sword hit (모슬링
+hp 3→2), contact damage (5→3 with hearts rendering ❤️❤️❤️🤍🤍), death →
+respawn at exactly (200, 590) with full HP after 1.50s, Moonstone activation,
+cleansing wave, all 9 Mosslings dissolved, atmosphere 0→1, victory text
+appearing and hiding itself by ~4.5s, restart prompt hysteresis, restart
+reset, and combat after restart. `showToast` was called **0** times across
+the entire climax and the toast element was visible for **0** frames.
+Mobile 375×812: title version visible, gameplay HUD version absent, no
+horizontal overflow, 64px attack button, 65px restart tap target. Console
+clean.
+
+### v0.1.10 — PHASE 9.2: 숲의 앰비언스 (경량 절차적 환경음)
+
+Three things worth knowing before touching `js/audio.js` again:
+
+1. **The node budget is the whole design.** Mobile browsers throttle audio
+   graphs hard, so the rule here is: three persistent nodes, and everything
+   else is a short-lived one-shot that stops itself. If you add a layer, ramp
+   a parameter on the existing chain rather than adding an oscillator that
+   runs forever. The reason there is no wind LFO is exactly this.
+2. **`startAmbience()` sits outside `unlock()`'s try/catch on purpose.**
+   `unlock()` sets `this.ctx = null` in its catch as the "no audio, game still
+   runs" fallback. If ambience were inside that block, a failure while
+   building the bed would null the context and silently kill every sound
+   effect too. Keep it separated.
+3. **Reuse `this._noiseBuffer`.** The 0.2s white-noise buffer already exists
+   for the sword/hit SFX. The bed loops that same buffer at a slowed
+   `playbackRate` instead of allocating a second, longer one — cheaper, and
+   the pitch-shift is what gives the wind its low character.
+
+Verified at runtime, not by inspection: zero nodes before the start button;
+exactly 1 BufferSource + 1 filter + 1 gain after it; five repeated
+`unlock()`/`startAmbience()` calls created **0** additional nodes; 60 cricket
+intervals sampled (forest 4.0–7.9s, cleansed 6.0–10.7s) were all distinct;
+mode switches and repeated visibility toggles created no new persistent nodes
+and left the chain object identical; console clean throughout.
+
+### v0.1.9 — PHASE 9.1: 다시 모험하기 (세션 소프트 리셋)
+
+Closes the 2–3 minute loop so it can be replayed without refreshing the
+browser. Two notes for whoever touches this next:
+
+1. **`restartSession()` order is load-bearing.** `Enemy.init()` bails out
+   early when `MG.Game.cleansed` is true — that early return is what stops
+   Mosslings reappearing after a post-cleansing death. So the reset clears
+   `cleansed` *before* calling `Enemy.init()`, otherwise a restart would
+   silently produce an empty forest. Verified: all 9 return, with the 4
+   guards back at their exact formation distances (51/51.2/58/58.1 from the
+   stone).
+2. **The prompt is a real `<button>`, on purpose.** The spec discouraged
+   "buttons" in the sense of menus/panels; a semantic button styled as a
+   floating one-line pill was chosen because `#ui-layer button` already has
+   `pointer-events: auto` and the "모험 시작" button already proves a plain
+   `click` listener is reliable on touch without double-firing. Tap target
+   is 65px tall (well above the 44px comfort minimum) and sits at 26% —
+   clear of the joystick zone (bottom 45%) and the attack button.
+
+Also added `UI.hideVictory()` / `UI.hideToast()`, which clear their pending
+timers before hiding — without that, a timer left over from the previous run
+could fire mid-way through the next one and dismiss its victory text early.
+`updateRestartPrompt()` additionally dismisses any lingering toast when the
+prompt appears; the two can't actually coexist in real play (their trigger
+locations are ~520px apart) but they sit close enough on screen that the
+guard is cheaper than the caveat.
 
 ### v0.1.8 — PHASE 8.1: 정화 (완결된 마이크로 어드벤처)
 

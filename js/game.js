@@ -36,8 +36,16 @@
   var CLEANSE_FLASH = 0.18;        // 초 — 활성화 순간의 짧은 화면 섬광
   var ATMOSPHERE_FADE = 1.4;       // 초 — 숲이 밝아지는 데 걸리는 시간
 
+  /* PHASE 9.1: 정화가 끝난 뒤, 플레이어가 스스로 처음 출발했던 공터로 돌아오면
+     "다시 모험하기"를 조용히 권한다. 강제하지 않는다 — 정화된 숲을 마음껏
+     돌아다니다가 돌아왔을 때만 나타난다.
+     경계에서 문구가 깜빡이지 않도록 들어올 때와 나갈 때 반경을 다르게 둔다
+     (모슬링 감지의 DETECT_RADIUS/LEAVE_RADIUS 와 같은 히스테리시스 방식). */
+  var RESTART_ENTER_RADIUS = 70;   // 이 안으로 들어오면 문구가 뜬다
+  var RESTART_LEAVE_RADIUS = 92;   // 이 밖으로 나가야 사라진다
+
   var Game = {
-    VERSION: '0.1.8',
+    VERSION: '0.1.11',
     WIDTH: INTERNAL_W,
     HEIGHT: INTERNAL_H,
     DEBUG_MOBILE_LAYOUT: DEBUG_MOBILE_LAYOUT,
@@ -69,6 +77,10 @@
 
     // 0 = 정화 전(어둡고 무겁게) → 1 = 정화 후(달빛이 든 것처럼 밝게)
     atmosphere: 0,
+
+    // PHASE 9.1: "다시 모험하기" 문구가 지금 떠 있는가 (DOM 을 매 프레임
+    // 건드리지 않고 상태가 바뀔 때만 갱신하기 위한 캐시)
+    _restartPromptShown: false,
 
     _lastTs: 0,
     _rafId: 0,
@@ -245,6 +257,7 @@
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
       this.updateMoonstone(dt);
       this.updateCleansing(dt);
+      this.updateRestartPrompt();
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
     },
@@ -301,8 +314,11 @@
         MG.Enemy.spawnParticles(m.x, m.y - 4, 18, 0, -1, 'reward');
       }
 
-      // D. 임시 토스트 — 퀘스트 로그가 아니라 잠깐 떴다 사라지는 알림
-      if (MG.UI && MG.UI.showToast) MG.UI.showToast('달의 돌을 발견했다');
+      // D. PHASE 9.3: 여기서 '달의 돌을 발견했다' 토스트를 띄우지 않는다.
+      //    돌을 치는 순간 곧바로 정화가 시작되므로, 토스트와 '숲이 정화되었다'가
+      //    한 화면에 겹쳐 뜨면서 가장 중요한 순간의 메시지가 둘로 쪼개졌다.
+      //    이 결말에서는 '숲이 정화되었다' 하나만 남긴다.
+      //    (MG.UI.showToast 자체는 그대로 살아 있다 — 다른 이벤트에서 쓸 수 있다.)
 
       // E. PHASE 8.1: 그리고 숲 전체가 정화된다 — 이 게임의 결말.
       this.startCleansing(m.x, m.y);
@@ -318,7 +334,92 @@
 
       this.hitStop(0.08);
 
+      // PHASE 9.2: 숲의 공기도 함께 바뀐다 — 새 소리를 켜는 게 아니라,
+      // 이미 깔려 있던 앰비언스 한 겹의 값만 2초에 걸쳐 옮긴다.
+      if (MG.Audio && MG.Audio.setAmbientMode) MG.Audio.setAmbientMode('cleansed');
+
       if (MG.UI && MG.UI.showVictory) MG.UI.showVictory('숲이 정화되었다');
+    },
+
+    /* PHASE 9.1: 정화가 끝난 뒤 "다시 모험하기" 문구를 띄울지 정한다.
+       조건은 두 가지뿐이다 — 이미 정화되었고(cleansed), 플레이어가 처음
+       출발했던 공터(MG.Map.spawn) 근처로 스스로 돌아왔을 때.
+       정화 직후에는 플레이어가 달의 돌(700,400) 옆에 있어 스폰(200,590)에서
+       430px 넘게 떨어져 있으므로, 구조적으로 곧바로 뜨지 않는다 — 정화된 숲을
+       원하는 만큼 돌아다닌 뒤 돌아왔을 때만 나타난다.
+       DOM 은 상태가 바뀌는 순간에만 건드린다(매 프레임 접근하지 않는다). */
+    updateRestartPrompt: function () {
+      var show = false;
+
+      if (this.cleansed && !this.cleanse && MG.Map && MG.Map.spawn &&
+          MG.Player && MG.Player.state !== 'DEAD') {
+        var sp = MG.Map.spawn;
+        var d = Math.hypot(MG.Player.x - sp.x, MG.Player.y - sp.y);
+        // 히스테리시스: 들어올 땐 70, 나갈 땐 92 — 경계에서 깜빡이지 않는다
+        show = this._restartPromptShown ? (d <= RESTART_LEAVE_RADIUS)
+                                        : (d <= RESTART_ENTER_RADIUS);
+      }
+
+      if (show === this._restartPromptShown) return;
+      this._restartPromptShown = show;
+
+      if (!MG.UI) return;
+      if (show) {
+        // 실제 플레이에서 둘이 동시에 뜰 일은 없지만(토스트는 달의 돌 옆에서만,
+        // 이 문구는 스폰 근처에서만 뜬다), 화면 위치가 가까우므로 혹시 남아 있는
+        // 토스트가 있으면 먼저 치운다 — 어차피 지난 알림이다.
+        if (MG.UI.hideToast) MG.UI.hideToast();
+        if (MG.UI.showRestartPrompt) MG.UI.showRestartPrompt('다시 모험하기');
+      } else {
+        if (MG.UI.hideRestartPrompt) MG.UI.hideRestartPrompt();
+      }
+    },
+
+    /* PHASE 9.1: 세션 리셋 — 브라우저를 새로고침하지 않고 처음 상태로 되돌린다.
+       초기화 로직을 새로 쓰지 않고 기존 진입점(Player.init / Enemy.init /
+       Input.reset)을 그대로 재사용한다. 저장/불러오기는 없다.
+       순서가 중요하다: Enemy.init() 은 cleansed 가 true 면 모슬링을 만들지 않고
+       조기 반환하므로(정화 후 부활에서 적이 돌아오지 않게 하는 장치),
+       반드시 cleansed 를 먼저 내린 뒤에 호출해야 한다. */
+    restartSession: function () {
+      // 1) 정화/목표 상태를 먼저 되돌린다
+      this.cleansed = false;
+      this.cleanse = null;
+      this.atmosphere = 0;
+      this.moonstoneFound = false;
+      this.hitStopT = 0;
+
+      // 2) 달의 돌을 다시 잠들게 한다
+      if (MG.Map && MG.Map.moonstone) {
+        MG.Map.moonstone.state = 'IDLE';
+        MG.Map.moonstone.activeT = 0;
+      }
+
+      // 3) 플레이어와 모슬링 — 기존 초기화 함수를 그대로 쓴다
+      //    (Player.init 이 위치/HP/공격/무적/어시스트 상태를 모두 되돌리고,
+      //     Enemy.init 이 9마리를 원래 스폰 지점에 다시 배치한다)
+      if (MG.Player && MG.Player.init) MG.Player.init();
+      if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();
+      if (MG.Enemy && MG.Enemy.particles) MG.Enemy.particles.length = 0;
+
+      // 4) 문구를 누르느라 눌려 있던 입력이 남지 않도록 정리한다
+      if (MG.Input && MG.Input.reset) MG.Input.reset();
+
+      // PHASE 9.2: 숲의 공기도 처음 상태로 되돌린다 (앰비언스를 껐다 켜지
+      // 않는다 — 같은 체인의 값만 되돌아간다)
+      if (MG.Audio && MG.Audio.setAmbientMode) MG.Audio.setAmbientMode('forest');
+
+      // 5) UI 정리 — 승리 문구/토스트/재시작 문구를 모두 즉시 내린다
+      this._restartPromptShown = false;
+      if (MG.UI) {
+        if (MG.UI.hideRestartPrompt) MG.UI.hideRestartPrompt(true);
+        if (MG.UI.hideVictory) MG.UI.hideVictory();
+        if (MG.UI.hideToast) MG.UI.hideToast();
+        if (MG.UI.renderHearts && MG.Player) MG.UI.renderHearts(MG.Player.hp, MG.Player.maxHp);
+      }
+
+      // 타이틀로 되돌아가지 않는다 — 곧바로 다시 플레이한다
+      this.state = 'PLAY';
     },
 
     /* 파동을 퍼뜨리고(=닿는 순서대로 모슬링을 정화하고) 숲을 서서히 밝힌다. */
