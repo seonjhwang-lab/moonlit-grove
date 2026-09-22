@@ -130,13 +130,28 @@ html, body {
      (아래로 더 내리면 조이스틱 영역(화면 하단 45%)에 닿으므로 30% 가 한계) */
   top: 30%;
   transform: translate(-50%, -6px);
-  max-width: 78%;
+  /* width:max-content + max-width 조합이 핵심이다. 이 상자는 절대 배치라
+     내용에 맞춰 줄어드는데(shrink-to-fit), word-break: keep-all 과 만나면
+     "가장 긴 어절" 폭으로 쪼그라들어 짧은 줄이 5줄까지 쌓였다.
+     max-content 로 "안 접었을 때의 폭"을 먼저 요구하고 max-width 로 잘라주면,
+     허용된 폭을 꽉 채운 뒤 그 안에서만 접힌다. */
+  width: max-content;
+  max-width: 84%;
   padding: 0.55em 1.15em;
   font-family: var(--mg-font-display);
   font-size: clamp(13px, 2.7vh, 21px);
   font-weight: 700;
   letter-spacing: 0.06em;
-  white-space: nowrap;
+  /* PHASE 9 폴리시: 예전에는 nowrap 이었다. 짧은 알림만 있던 시절에는 문제가
+     없었지만, 모스키 영입 문구("모스키가 당신을 따라오기로 했습니다!" — 20자)는
+     한 줄에 들어가지 않아 실기 화면에서 잘려 보였다. 문구는 GAME_DESIGN.md 가
+     정한 것이라 줄일 수 없으므로 상자가 접히게 한다.
+     word-break: keep-all 은 한국어 어절 중간에서 끊지 않는다 — 이게 없으면
+     "따라오기로" 같은 낱말이 아무데서나 잘려 읽기 나빠진다. */
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;   /* 한 어절이 상자보다 길 때의 최후 안전장치 */
+  line-height: 1.45;
   text-align: center;
   color: var(--mg-moon);
   background: var(--mg-panel);
@@ -328,7 +343,20 @@ html, body {
    선언 순서와 무관하게 이긴다 — display 값 충돌을 피하기 위한 구조. */
 body:not(.mg-touch) #joystick-zone,
 body:not(.mg-touch) .joystick-base,
-body:not(.mg-touch) .attack-button {
+body:not(.mg-touch) .attack-button,
+body:not(.mg-touch) .interact-button,
+body:not(.mg-touch) .ability-button,
+/* PHASE 9 폴리시: 플레이 중이 아닐 때(=타이틀 화면)는 조작 컨트롤을 전부 숨긴다.
+   예전에는 mg-touch 만 보고 판단했기 때문에, 터치 기기에서는 "모험 시작"을 누르기
+   전부터 공격 버튼이 타이틀 뒤에 떠 있었다(데스크톱에서는 mg-touch 가 없어 우연히
+   가려져 있었을 뿐이다). game.js 가 상태를 바꿀 때 mg-playing 을 함께 켜고 끈다 —
+   타이머가 아니라 기존 게임 상태에 붙인다. 이 규칙은 컨트롤이 자기 display 값을
+   갖고 있어도 항상 이긴다(위 mg-touch 규칙과 같은 구조). */
+body:not(.mg-playing) #joystick-zone,
+body:not(.mg-playing) .joystick-base,
+body:not(.mg-playing) .attack-button,
+body:not(.mg-playing) .interact-button,
+body:not(.mg-playing) .ability-button {
   display: none;
 }
 
@@ -397,6 +425,88 @@ body:not(.mg-touch) .attack-button {
   transition: transform 80ms ease, box-shadow 80ms ease, filter 80ms ease;
 }
 .attack-button.is-pressed {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  filter: brightness(1.15);
+}
+
+/* PHASE 9 STEP 1: 상호작용 버튼 — 공격 버튼 바로 위에 놓인다.
+   · 가로 위치는 공격 버튼과 같은 4.5% 라 엄지 궤적이 자연스럽고,
+     조이스틱 영역(좌하단 폭 55%)과는 가로로 전혀 겹치지 않는다.
+   · 세로로는 공격 버튼 높이 + 14px 만큼 띄운다. 두 버튼이 같은 vmin clamp 로
+     함께 커지고 작아지므로 어떤 화면 크기에서도 그 간격이 유지된다.
+   · 공격 버튼보다 한 단계 작고 색이 달라(숲빛) 급할 때 오조작하지 않는다.
+   공격 버튼 스타일은 건드리지 않는다. */
+.interact-button {
+  position: fixed;
+  right: calc(4.5% + env(safe-area-inset-right));
+  bottom: calc(6% + clamp(58px, 17vmin, 84px) + 14px + env(safe-area-inset-bottom));
+  width: clamp(52px, 15vmin, 74px);
+  height: clamp(52px, 15vmin, 74px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(21px, 7vmin, 31px);
+  line-height: 1;
+  color: var(--mg-ink);
+  background: linear-gradient(180deg, var(--mg-leaf) 0%, var(--mg-leaf-deep) 100%);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease, transform 80ms ease,
+              box-shadow 80ms ease, filter 80ms ease;
+}
+/* .attack-button 과 마찬가지로 자기 display 값을 갖고 있으므로, hidden 속성이
+   실제로 먹으려면 이 규칙이 필요하다 (.joystick-base[hidden] 과 같은 이유). */
+.interact-button[hidden] { display: none; }
+
+/* MG.UI.showInteract() 가 붙인다 — 나타날 때만 짧게 페이드인한다.
+   숨길 때는 즉시 hidden 이라, 사라지는 중인 버튼이 탭을 먹는 일이 없다. */
+.interact-button.is-visible { opacity: 1; }
+
+.interact-button.is-pressed {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  filter: brightness(1.15);
+}
+
+/* PHASE 10 STEP 2: 모스키 능력(덩굴 다리) 버튼 — 공격 버튼 "왼쪽"에 놓는다.
+   · 상호작용 버튼은 공격 버튼 "위"에 있으므로 세 버튼이 서로 절대 겹치지 않는다
+     (실제로 상호작용은 RECRUITABLE, 능력은 FOLLOWING 일 때만 떠서 동시에
+      나타나지도 않지만, 자리부터 분리해 두어야 안전하다).
+   · 왼쪽 끝은 조이스틱 영역(화면 좌하단 폭 55%) 바깥에 머문다.
+   · 색은 덩굴/룬과 같은 보라 계열이라 붉은 공격 버튼과 한눈에 구분된다. */
+.ability-button {
+  position: fixed;
+  right: calc(4.5% + clamp(58px, 17vmin, 84px) + 14px + env(safe-area-inset-right));
+  bottom: calc(6% + env(safe-area-inset-bottom));
+  width: clamp(52px, 15vmin, 74px);
+  height: clamp(52px, 15vmin, 74px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(21px, 7vmin, 31px);
+  line-height: 1;
+  color: var(--mg-ink);
+  background: linear-gradient(180deg, #7b4fc0 0%, #4a2b7d 100%);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease, transform 80ms ease,
+              box-shadow 80ms ease, filter 80ms ease;
+}
+/* 자기 display 값을 갖고 있으므로 hidden 속성이 먹으려면 이 규칙이 필요하다 */
+.ability-button[hidden] { display: none; }
+.ability-button.is-visible { opacity: 1; }
+.ability-button.is-pressed {
   transform: translateY(4px);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
   filter: brightness(1.15);

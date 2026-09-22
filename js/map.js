@@ -6,7 +6,9 @@
      - 충돌 사각형 목록 제공 (collision.js 가 소비)
      - 지면은 오프스크린 캔버스에 한 번만 굽고(bake) 매 프레임 blit 한다
      - 나무/바위는 플레이어와 y 정렬해야 하므로 매 프레임 그린다 (game.js 가 정렬)
-   보물 상자(PHASE 8) / 덩굴 앵커(PHASE 10) 는 아직 배치하지 않는다.
+   PHASE 10 STEP 1: 보물 상자 + 덩굴 앵커를 '배치만' 한다.
+     - 상자는 강 건너에 보이기만 하고 열 수 없다 (상호작용 없음).
+     - 앵커는 순수한 표식이다 (능력/상호작용 없음 — STEP 2 의 몫).
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -19,6 +21,35 @@
   /* 남북으로 흐르는 물길 — 오른쪽 보물 지역을 완전히 갈라놓는다.
      PHASE 10 의 덩굴 다리가 생기기 전에는 건널 수 없다. */
   var RIVER = { x: 1000, y: 0, w: 130, h: MAP_H };
+
+  /* PHASE 10 STEP 1: 덩굴 다리가 이어줄 두 지점.
+
+     좌표를 이렇게 잡은 이유(실측 근거):
+     · 서안에서 걸어갈 수 있는 한계는 x=994.5 다(발 상자 11px + 강 x=1000).
+       그 자리에 서면 카메라(360px 폭)가 보여주는 범위는 x 814~1174 뿐이다.
+     · 그래서 상자는 강 동안(1130)에서 20px 만 떨어진 1150 에 둔다. 여기서만
+       "강 건너에 무언가 있다"가 실제로 화면에 들어온다(오른쪽 여백 16px).
+       GLADES 의 보물 공터 중심(1200)에 두면 화면 밖이라 보이지 않는다 —
+       그 자리를 정하던 시절의 주석은 카메라가 640px 이던 때의 계산이다.
+     · 앵커는 맞은편 상자와 같은 높이(y=578)의 물가에 둔다. 두 점이 한 직선
+       위에 있어야 "여기서 저기로 다리가 놓인다"가 한눈에 읽힌다.
+     · 앵커의 x 를 물가 끝(994)이 아니라 984 로 조금 물린 이유: 처음엔 986,600
+       에 뒀더니 플레이어가 강둑에 서는 자리와 4px 밖에 안 떨어져 루카 스프라이트
+       뒤에 완전히 가려졌다(실제로 화면을 찍어 확인했다). 지금 위치는 강둑에
+       섰을 때 22.8px 떨어져 있어 "옆에 있는 표식"으로 또렷하게 보인다.
+     · 앵커는 물가 모슬링의 집(962,646)에서 71px 떨어져 있다 — 배회 반경 46
+       밖이라 서로 겹치지 않는다. 가장 가까운 나무는 47px, 바위는 198px. */
+  var VINE_ANCHOR_X = 984;
+  var VINE_ANCHOR_Y = 578;
+  var TREASURE_X = 1150;
+  var TREASURE_Y = 578;
+
+  /* PHASE 10 STEP 2: 덩굴 다리.
+     건널목은 앵커와 같은 높이(578)에 놓이고, 위아래로 BRIDGE_HALF 만큼만
+     열린다. 플레이어 발 상자가 11x6 이므로 26px 폭이면 y 571~591 사이에
+     설 수 있어(20px 통로) 넉넉하면서도 "강 전체가 열린 것"처럼 보이지 않는다. */
+  var BRIDGE_Y = VINE_ANCHOR_Y;
+  var BRIDGE_HALF = 13;
 
   /* 흙길: 시작 지점에서 동쪽 물가까지 이어지는 주 통로 */
   var PATH_MAIN = [
@@ -35,10 +66,11 @@
     [700, 400, 112],   // 숲 탐험 중간 공터
     [300, 235, 138],   // 작은 공터 (PHASE 9 에서 모스키가 나타날 곳)
     [962, 646, 92],    // 물가 — 건너편이 보이는 자리
-    /* 강 건너 보물 지역 (PHASE 8).
-       강둑(x≈994)에 섰을 때 카메라가 보여주는 범위는 x≈754~1234 이다.
-       "모스키를 얻기 전에 보물이 보여야 한다"는 핵심 설계를 지키려면
-       보물 자리가 반드시 이 범위 안에 있어야 하므로 강에 바짝 붙여 둔다. */
+    /* 강 건너 보물 지역.
+       주의: 예전 주석은 강둑에서 x 754~1234 가 보인다고 적혀 있었지만, 그건
+       카메라가 640px 이던 가로 시절의 계산이다. 세로 전환 뒤 카메라는 360px 라
+       실제로는 x 814~1174 만 보인다(실측). 이 공터는 나무가 자라지 않는 구역을
+       정의할 뿐이고, 실제로 보여야 하는 상자는 위쪽 TREASURE_X 로 따로 잡는다. */
     [1200, 636, 116]
   ];
 
@@ -119,6 +151,10 @@
     WIDTH: MAP_W,
     HEIGHT: MAP_H,
     RIVER: RIVER,
+    /* PHASE 9 STEP 3: 공터 정의를 읽기용으로 공개한다. companion.js 가 모스키
+       공터의 반지름을 알아야 하는데, 그 값을 저쪽에 복사해 두면 지형의 진실이
+       두 곳이 된다. 여기서 그대로 읽어가게 한다 (동작 변화 없음). */
+    GLADES: GLADES,
 
     trees: [],
     rocks: [],
@@ -130,6 +166,29 @@
        진행 플래그(MG.Game.moonstoneFound)와 짝을 이룬다. 여기(Map)는 좌표와
        충돌/렌더 데이터만 들고, "언제 활성화되는가"는 game.js 가 판단한다.
        activeT 는 활성화 이후 연출용 경과 시간(초)일 뿐 게임 로직이 아니다. */
+    /* PHASE 10 STEP 1: 강 건너에 보이기만 하는 보물 상자.
+       이 단계에서 이것은 순수한 풍경이다 — 열리지 않고, 상호작용도 없고,
+       충돌체도 아니다(어차피 강이 막고 있다). state 는 STEP 3 이후를 위한
+       자리만 잡아둔 것이며 지금은 아무도 바꾸지 않는다. */
+    /* PHASE 10 STEP 3: state 는 'CLOSED' -> 'OPENING' -> 'OPEN' 세 가지다.
+       openT 는 뚜껑이 열리는 연출용 경과 시간(초)일 뿐 게임 로직이 아니다.
+       "언제 열리는가"는 game.js 의 updateTreasure() 가 판단한다 —
+       달의 돌과 완전히 같은 역할 분담이다. */
+    treasure: { x: TREASURE_X, y: TREASURE_Y, state: 'CLOSED', openT: 0 },
+
+    /* PHASE 10 STEP 1: 덩굴 앵커 — 다리가 자라날 자리.
+       지금은 표식일 뿐이다. 상호작용도, 능력도, 충돌도 없다.
+       모스키의 덩굴과 같은 보라색을 쓰는 것은 의도적이다 — 모스키를 얻은 뒤
+       플레이어가 "저기서 저 색을 봤다"를 스스로 연결하게 하려는 것이다. */
+    vineAnchor: { x: VINE_ANCHOR_X, y: VINE_ANCHOR_Y },
+
+    /* PHASE 10 STEP 2: 덩굴 다리 상태.
+       built  — 완성되어 영구히 남아 있는가
+       t      — 0~1 건설 진행도(연출 전용). companion.js 가 채운다. */
+    bridge: { built: false, t: 0 },
+    BRIDGE_Y: BRIDGE_Y,
+    BRIDGE_HALF: BRIDGE_HALF,
+
     moonstone: { x: MOONSTONE_X, y: MOONSTONE_Y, state: 'IDLE', activeT: 0 },
 
     /* 플레이어 시작 위치 (player.js 가 참조) */
@@ -264,6 +323,120 @@
       });
 
       this.solids = s;
+    },
+
+    /* PHASE 10 STEP 2: 강의 충돌을 다시 깐다.
+
+       collision.js 는 손대지 않는다. 대신 강 solid "하나"를 건널목 위/아래
+       두 조각으로 쪼갠다 — 그 사이에 생긴 틈이 곧 걸어서 건널 수 있는 구간이다.
+       강의 나머지는 그대로 solid 로 남으므로 다른 곳에서는 여전히 못 건넌다.
+       (player.js / enemy.js 는 매번 MG.Map.solids 를 새로 읽으므로, 이 배열을
+        제자리에서 고치면 다음 프레임부터 바로 반영된다.)
+
+       텔레포트도, 보이지 않는 트리거도 쓰지 않는다 — 진짜 충돌 변경이다. */
+    setBridgeOpen: function (open) {
+      var s = this.solids;
+      for (var i = s.length - 1; i >= 0; i--) {
+        if (s[i].water) s.splice(i, 1);
+      }
+      if (!open) {
+        s.push({ x: RIVER.x, y: RIVER.y, w: RIVER.w, h: RIVER.h, water: true });
+        return;
+      }
+      var top = BRIDGE_Y - BRIDGE_HALF;
+      var bot = BRIDGE_Y + BRIDGE_HALF;
+      s.push({ x: RIVER.x, y: RIVER.y, w: RIVER.w, h: top - RIVER.y, water: true });
+      s.push({ x: RIVER.x, y: bot, w: RIVER.w, h: (RIVER.y + RIVER.h) - bot, water: true });
+    },
+
+    /* 세션 재시작용 — 다리를 없던 일로 되돌린다 (강이 다시 완전히 막힌다). */
+    resetBridge: function () {
+      this.bridge.built = false;
+      this.bridge.t = 0;
+      this.setBridgeOpen(false);
+    },
+
+    /* 다리를 물 위·엔티티 아래에 그린다.
+       game.js 의 renderWater() 직후에 호출된다. Y 정렬 큐에 넣지 않는 이유는
+       분명하다 — 이건 "올라서는 바닥"이라 루카나 모스키를 절대 가리면 안 된다.
+       (나무/바위처럼 옆을 지나가는 물체가 아니다.) 새 캔버스도 만들지 않고
+       기존 월드 렌더 파이프라인 안에서 그린다. */
+    renderBridge: function (ctx, cam, t) {
+      var b = this.bridge;
+      if (!b.built && b.t <= 0) return;
+      if (cam.x > RIVER.x + RIVER.w + 40 || cam.x + cam.w < RIVER.x - 40) return;
+
+      var p = b.built ? 1 : b.t;
+      // 0.20~0.55 덩굴 가닥이 뻗고, 0.55~0.85 바닥이 생기고, 0.85~1.00 마무리 빛
+      var strand = Math.max(0, Math.min(1, (p - 0.20) / 0.35));
+      var deck   = Math.max(0, Math.min(1, (p - 0.55) / 0.30));
+      var pulse  = Math.max(0, Math.min(1, (p - 0.85) / 0.15));
+
+      var x0 = RIVER.x - 8;                 // 양쪽 둑에 조금 걸치게 해 이어져 보이게
+      var x1 = RIVER.x + RIVER.w + 8;
+      var full = x1 - x0;
+      var y = BRIDGE_Y;
+      var half = BRIDGE_HALF;
+
+      ctx.save();
+
+      // 1) 덩굴 가닥 — 서쪽 앵커에서 동쪽으로 자라나간다
+      var sx = x0 + full * strand;
+      ctx.strokeStyle = '#4a2b7d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x0, y - half + 2); ctx.lineTo(sx, y - half + 2);
+      ctx.moveTo(x0, y + half - 2); ctx.lineTo(sx, y + half - 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#7b4fc0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x0, y - half + 2); ctx.lineTo(sx, y - half + 2);
+      ctx.moveTo(x0, y + half - 2); ctx.lineTo(sx, y + half - 2);
+      ctx.stroke();
+
+      // 2) 바닥 — 덩굴을 엮은 판자. 가닥이 다 뻗은 뒤 채워진다.
+      var dx = x0 + full * deck;
+      if (deck > 0) {
+        ctx.fillStyle = '#3f6b46';
+        ctx.fillRect(x0, y - half + 3, dx - x0, half * 2 - 6);
+        ctx.fillStyle = '#57894f';
+        ctx.fillRect(x0, y - half + 3, dx - x0, 3);
+        // 엮인 결
+        ctx.fillStyle = '#2e5236';
+        for (var wx = x0 + 4; wx < dx; wx += 7) {
+          ctx.fillRect(Math.round(wx), y - half + 4, 1, half * 2 - 8);
+        }
+        // 가장자리를 또렷하게 (물 위에서 경계가 읽혀야 한다)
+        ctx.fillStyle = '#8ae8c6';
+        ctx.fillRect(x0, y - half + 2, dx - x0, 1);
+        ctx.fillRect(x0, y + half - 3, dx - x0, 1);
+      }
+
+      // 3) 자라나는 끝의 빛 + 완성 순간의 맥동
+      if (!b.built && strand > 0 && strand < 1) {
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = '#c9a6ff';
+        ctx.fillRect(Math.round(sx) - 1, y - half + 1, 2, half * 2 - 2);
+      }
+      if (pulse > 0 && pulse < 1) {
+        ctx.globalAlpha = 0.5 * (1 - pulse);
+        ctx.fillStyle = '#eaffb0';
+        ctx.fillRect(x0, y - half, full, half * 2);
+      }
+
+      // 완성된 뒤에는 아주 느리게 숨쉬는 룬 빛만 남는다
+      if (b.built) {
+        var g = 0.25 + 0.20 * Math.sin(t * 1.3);
+        ctx.globalAlpha = g;
+        ctx.fillStyle = '#c9a6ff';
+        for (var rx = x0 + 10; rx < x1; rx += 26) {
+          ctx.fillRect(Math.round(rx), y - half + 1, 1, 1);
+          ctx.fillRect(Math.round(rx) + 3, y + half - 2, 1, 1);
+        }
+      }
+
+      ctx.restore();
     },
 
     /* PHASE 8: 검 판정용 상호작용 상자 (월드 좌표).
@@ -461,6 +634,19 @@
           o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
         out.push({ y: o.y, obj: o, kind: 'moonstone' });
       }
+
+      // PHASE 10 STEP 1: 상자와 앵커도 달의 돌과 똑같이 y 정렬 대상에 넣는다.
+      // 새 렌더 경로를 만들지 않는다 — 나무/바위와 앞뒤가 자연스럽게 정해진다.
+      o = this.treasure;
+      if (o.x >= cam.x - 40 && o.x <= cam.x + cam.w + 40 &&
+          o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
+        out.push({ y: o.y, obj: o, kind: 'treasure' });
+      }
+      o = this.vineAnchor;
+      if (o.x >= cam.x - 40 && o.x <= cam.x + cam.w + 40 &&
+          o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
+        out.push({ y: o.y, obj: o, kind: 'vineAnchor' });
+      }
       return out;
     },
 
@@ -468,6 +654,142 @@
       if (entry.kind === 'tree') this.drawTree(ctx, entry.obj);
       else if (entry.kind === 'rock') this.drawRock(ctx, entry.obj);
       else if (entry.kind === 'moonstone') this.drawMoonstone(ctx, entry.obj);
+      else if (entry.kind === 'treasure') this.drawTreasure(ctx, entry.obj);
+      else if (entry.kind === 'vineAnchor') this.drawVineAnchor(ctx, entry.obj);
+    },
+
+    /* PHASE 10 STEP 1: 보물 상자 — 강 건너에서 "저기 뭔가 있다"만 전달하면
+       된다. 바위(각진 회색)/달의 돌(창백한 푸른빛)과 헷갈리지 않도록 따뜻한
+       나무색 + 황금 테로 그린다.
+       PHASE 10 STEP 3: 뚜껑이 실제로 열린다. 뚜껑은 "뒤쪽 경첩"을 축으로
+       회전하므로, 캔버스를 경첩으로 옮겨 돌린 뒤 같은 사각형을 그린다 —
+       스프라이트를 추가하지 않고 열리는 모습을 만드는 가장 값싼 방법이다. */
+    drawTreasure: function (ctx, o) {
+      var t = (MG.Game && MG.Game.time) || 0;
+      var x = Math.round(o.x), y = Math.round(o.y);
+
+      // 열림 진행도 0~1 (CLOSED 0, OPENING 진행중, OPEN 1)
+      var openP = 0;
+      if (o.state === 'OPEN') openP = 1;
+      else if (o.state === 'OPENING') {
+        openP = Math.max(0, Math.min(1, o.openT / 0.55));
+        openP = 1 - (1 - openP) * (1 - openP);      // ease-out — 툭 열렸다 천천히 멎는다
+      }
+
+      // 그림자
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 1, 9, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 열린 뒤 새어나오는 달빛 — 상자가 비었다는 걸 알리는 신호
+      if (openP > 0) {
+        var glowPulse = 0.5 + 0.5 * Math.sin(t * 2.2);
+        ctx.save();
+        ctx.globalAlpha = (0.16 + 0.10 * glowPulse) * openP;
+        ctx.fillStyle = '#cfe4ff';
+        ctx.beginPath();
+        ctx.arc(x, y - 8, 11 + glowPulse * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 몸통 (아래 궤짝)
+      ctx.fillStyle = '#5a3a1e';
+      ctx.fillRect(x - 8, y - 9, 16, 9);
+      ctx.fillStyle = '#7a5028';
+      ctx.fillRect(x - 8, y - 9, 16, 4);
+      ctx.fillStyle = '#3d2613';
+      ctx.fillRect(x - 8, y - 1, 16, 1);
+
+      // 열렸다면 궤짝 안쪽이 보인다 (달빛 조각이 있던 자리)
+      if (openP > 0.15) {
+        ctx.fillStyle = '#2a1a0e';
+        ctx.fillRect(x - 7, y - 10, 14, 3);
+        ctx.save();
+        ctx.globalAlpha = 0.55 * openP;
+        ctx.fillStyle = '#cfe4ff';
+        ctx.fillRect(x - 5, y - 10, 10, 2);
+        ctx.restore();
+      }
+
+      // 황금 테 (궤짝 쪽)
+      ctx.fillStyle = '#d9b45a';
+      ctx.fillRect(x - 8, y - 6, 16, 1);
+
+      // 뚜껑 — 뒤쪽 경첩(x, y-10)을 축으로 최대 105도까지 젖혀진다
+      ctx.save();
+      ctx.translate(x, y - 10);
+      ctx.rotate(-openP * 1.83);
+      ctx.fillStyle = '#8a5c2e';
+      ctx.fillRect(-9, -4, 18, 5);
+      ctx.fillStyle = '#a06f38';
+      ctx.fillRect(-9, -4, 18, 2);
+      ctx.fillStyle = '#d9b45a';
+      ctx.fillRect(-9, 0, 18, 1);
+      if (openP < 0.5) {                       // 자물쇠는 닫혀 있을 때만 보인다
+        ctx.globalAlpha = 1 - openP * 2;
+        ctx.fillRect(-2, -4, 4, 6);
+        ctx.fillStyle = '#f2d98a';
+        ctx.fillRect(-1, 0, 2, 2);
+      }
+      ctx.restore();
+
+      // 아주 느린 반짝임 — 멀리서도 눈에 걸리게 하는 유일한 움직임
+      if (openP < 1) {
+        var glint = 0.35 + 0.35 * Math.sin(t * 1.5);
+        ctx.fillStyle = 'rgba(255, 240, 190, ' + (glint * (1 - openP)).toFixed(2) + ')';
+        ctx.fillRect(x + 4, y - 13, 1, 1);
+        ctx.fillRect(x - 6, y - 12, 1, 1);
+      }
+    },
+
+    /* PHASE 10 STEP 1: 덩굴 앵커 — 물가에 남은 오래된 그루터기.
+       마른 덩굴이 감겨 있고 희미한 보라 룬이 잠들어 있다. 지금은 아무 기능도
+       없다(상호작용/충돌/능력 없음). 모스키의 덩굴과 같은 보라색을 쓴 것은
+       나중에 플레이어가 스스로 연결하게 하려는 의도적 복선이다. */
+    drawVineAnchor: function (ctx, o) {
+      var t = (MG.Game && MG.Game.time) || 0;
+      var x = Math.round(o.x), y = Math.round(o.y);
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.30)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 1, 7, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 그루터기
+      ctx.fillStyle = '#4a3524';
+      ctx.fillRect(x - 6, y - 9, 12, 9);
+      ctx.fillStyle = '#5d4430';
+      ctx.fillRect(x - 6, y - 9, 12, 3);
+      ctx.fillStyle = '#6d5340';
+      ctx.beginPath();
+      ctx.ellipse(x, y - 9, 6, 2.4, 0, 0, Math.PI * 2);   // 잘린 단면
+      ctx.fill();
+      ctx.fillStyle = '#3a2a1c';
+      ctx.beginPath();
+      ctx.ellipse(x, y - 9, 2.6, 1.1, 0, 0, Math.PI * 2);  // 나이테 중심
+      ctx.fill();
+
+      // 마른 덩굴이 그루터기를 감고 있다 (아직 잠들어 있어 색이 죽어 있다)
+      ctx.strokeStyle = '#5a4a63';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(x, y - 5, 6.5, 2.2, 0.18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(x, y - 2, 6.2, 2.0, -0.14, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 잠든 룬 — 아주 느리고 희미하게 숨쉰다. 모스키의 덩굴과 같은 보라색.
+      var pulse = 0.5 + 0.5 * Math.sin(t * 1.1);
+      ctx.save();
+      ctx.globalAlpha = 0.22 + 0.20 * pulse;
+      ctx.fillStyle = '#c9a6ff';
+      ctx.fillRect(x - 1, y - 12, 2, 2);
+      ctx.fillRect(x - 5, y - 6, 1, 1);
+      ctx.fillRect(x + 4, y - 4, 1, 1);
+      ctx.restore();
     },
 
     /* PHASE 8: 달의 돌 — 나무(둥근 초록 캐노피)/바위(각진 회색)와 확실히

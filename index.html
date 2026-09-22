@@ -55,6 +55,17 @@
             <div id="joystick-knob" class="joystick-knob"></div>
           </div>
           <button id="btn-attack" class="touch-controls attack-button" type="button" aria-label="공격">⚔</button>
+
+        <!-- PHASE 9 STEP 1: 상황별 상호작용 버튼 (GAME_DESIGN.md 의 PC "E: 상호작용"
+             과 같은 입력). 기본은 hidden 이고 MG.UI.showInteract() 가 부를 때만
+             나타난다. 새 입력 레이어를 만들지 않고 기존 #touch-layer 안에 둔다. -->
+        <button id="btn-interact" class="touch-controls interact-button" type="button" aria-label="상호작용" hidden>👋</button>
+
+        <!-- PHASE 10 STEP 2: 모스키 능력(덩굴 다리) 버튼. GAME_DESIGN.md 의 PC "Q"
+             와 같은 입력이다. 상호작용 버튼(👋)과 뜻이 다르므로 자리·색·아이콘을
+             모두 다르게 두었다 — 공격 버튼 왼쪽에 놓여 서로 겹치지 않는다.
+             기본은 hidden 이고 MG.UI.showAbility() 가 부를 때만 나타난다. -->
+        <button id="btn-ability" class="touch-controls ability-button" type="button" aria-label="덩굴 다리" hidden>🌿</button>
         </div>
 
         <!-- 타이틀 화면 -->

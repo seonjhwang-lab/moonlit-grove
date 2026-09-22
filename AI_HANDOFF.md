@@ -12,10 +12,220 @@ v0.1.11
 
 Current Phase:
 
-Phase 9.3 — Final polish pass — **COMPLETE**
+Phase 10 (VINE BRIDGE) — **STEP 3 COMPLETE** — 보물 상자까지 열린다
+Step 1 = environment. Step 2 = ability + bridge + collision.
+Step 3 = treasure chest interaction + reward state.
+The completion screen is NOT implemented (that remains Phase 11).
+
+Implemented (Phase 10 Step 3):
+
+* **`Map.treasure.state`: `'CLOSED' -> 'OPENING' -> 'OPEN'`** with an `openT`
+  animation clock. Opening is idempotent — `openTreasure()` returns
+  immediately unless the state is exactly `CLOSED`.
+* **`Game.updateTreasure(dt)`** joins the existing update chain beside
+  `updateMoonstone` / `updateCleansing`. Opening requires
+  `bridgeActivated === true`, `state === 'CLOSED'`, player alive, and a
+  28px/38px hysteresis ring — the same numbers as the Moski interaction, so
+  the button feels identical wherever it appears.
+* **The existing `#btn-interact` is reused, with no second button.** This is
+  safe *structurally*, not just by luck: `companion.js` drives that button
+  only inside its `RECRUITABLE` branch, and the chest requires
+  `bridgeActivated`, which implies Moski is already `FOLLOWING`. The two
+  conditions cannot both hold. (They are also 880px apart, against a 28px
+  range.)
+* **The lid actually rotates.** `drawTreasure` translates to the back hinge
+  and rotates up to 105 degrees, so opening is real geometry rather than a
+  swapped sprite. Open chests show the empty interior plus a slow moonlight
+  glow, and the closed-chest glint fades out.
+* **`MG.Audio.playTreasureOpen()`** — a short filtered-noise creak sweeping
+  420→1500Hz, then two very bright notes (A6→E7). Deliberately unlike the
+  Moonstone arpeggio, the recruitment triad, and the bridge swell.
+
+Previously implemented (Phase 10 Step 2):
+
+* **`MG.Input.abilityPressed`** — desktop `KeyQ` and the new mobile
+  `#btn-ability`, built on exactly the same 1-frame edge pattern as
+  `attackPressed` / `interactPressed`.
+* **Availability is four conditions**, checked every frame in
+  `Companion.canUseAbility()`: recruited, state FOLLOWING, bridge not yet
+  built, player alive — plus a 50px/62px hysteresis ring around the anchor.
+  Q outside those conditions does nothing at all.
+* **`BRIDGING` state**, 1.00s: Moski leaves Luka, travels to the anchor at
+  170px/s (measured arrival at **0.22s**, well before the vines finish), the
+  bridge grows, then Moski returns to FOLLOWING. Luka stays fully
+  controllable the whole time — no modal, no input lock.
+* **The collision change is real, and it is a solid split.** On completion
+  `Map.setBridgeOpen(true)` removes the single `water: true` solid and pushes
+  **two** segments (y 0–565 and y 591–810), leaving a 26px gap at the
+  crossing. `collision.js` was not touched — player.js and enemy.js re-read
+  `MG.Map.solids` every call, so mutating the array in place is enough.
+  No teleport, no invisible trigger.
+* **The bridge renders between water and entities**, via a new
+  `Map.renderBridge()` called right after `renderWater()`. It is deliberately
+  *not* in the Y-sort queue: it is a surface you stand on, so it must never
+  occlude Luka or Moski.
+
+Previously implemented (Phase 10 Step 1) — three data points and two draw functions:
+
+* **The blocked gap already existed and was reused unchanged.** `RIVER`
+  ({x:1000, y:0, w:130, h:810}) is already a full-height solid with
+  `water: true`. A BFS over the real collision data (21,117 nodes from spawn)
+  confirms the east bank is unreachable — max reachable x is **990** against
+  a river edge at 1000, and there is no bypass anywhere on the map. Nothing
+  about the river or collision.js was touched.
+* **`MG.Map.treasure` at (1150, 578)** — a chest that is visible and inert.
+  Not a solid, no interaction, no reward. `state: 'CLOSED'` is a placeholder
+  nobody writes to yet.
+* **`MG.Map.vineAnchor` at (984, 578)** — a weathered stump wrapped in
+  dormant vines with faint violet runes, on the west bank. Purely a landmark:
+  no interaction, no collision, no ability.
+* **`MG.Game.bridgeActivated = false`** — an inert flag, reset by
+  `restartSession()`. Nothing sets it true.
+
+**The chest coordinate is the important finding.** The old map.js comment
+claimed the bank view spans x 754–1234, and placed the treasure glade centre
+at x=1200 accordingly. That comment predates the portrait conversion: the
+camera is 360px wide now, not 640, so standing at the bank actually shows
+**x 814–1174**. A chest at 1200 would have been off-screen — silently
+breaking GAME_DESIGN.md's core requirement that the player sees the treasure
+*before* finding Moski. 1150 puts it on screen with 15px to spare.
+
+Previously: Phase 9 (MOSKI COMPANION) — **COMPLETE + UI 폴리시**
+Steps 1-4 done (input & UI / entity & TRAPPED / recruitment / following),
+plus a two-issue UI fix from real-phone playtest feedback.
 (implemented and verified by Claude Code)
 
-Implemented (Phase 9.3) — two small changes, no new systems:
+Fixed in the polish pass (two player-reported bugs, nothing else):
+
+* **Recruitment message was clipped on a real phone.** `.hud-toast` carried
+  `white-space: nowrap` from when toasts were short. The Phase 9 message is
+  20 characters and simply cannot fit one line at 21px inside `max-width`.
+  The container now wraps; the wording (fixed by GAME_DESIGN.md) is untouched.
+* **The attack button showed through the title screen on touch devices.**
+  Touch controls were gated only on `mg-touch`, never on game state, so they
+  existed from boot. Desktop hid them by accident (no `mg-touch`), which is
+  why this only ever appeared on a phone. Now also gated on `mg-playing`,
+  toggled by `Game.init()` (TITLE) and `Game.startAdventure()` (PLAY) — game
+  state, not a timer.
+
+Implemented (Phase 9 Step 4) — Moski now actually follows Luka:
+
+* **Damped steering, nothing more.** Per frame: find the anchor behind Luka,
+  ease toward it with `1 - exp(-10 * dt)`, then enforce separation. No
+  physics engine, no pathfinding, no A*, no allocations.
+* **Anchor** is `player - facing * (18 x / 13 y)` — shorter on Y because of
+  the top-down perspective. Steady-state trail measured 31.7px horizontally
+  and 26.7px vertically while running, settling to ~18px at rest.
+* **A 6px deadzone** stops all movement once close, and the step eases toward
+  the *deadzone boundary* rather than the exact anchor. Measured drift while
+  Luka stands still: **exactly 0 over 2 seconds**.
+* **Separation is a position constraint, not a force** — see the changelog
+  note; this was changed after measurement proved the damped version let
+  Moski reach 3.2px from Luka's centre (i.e. inside him) on a direction
+  reversal.
+* **Speed cap 150px/s.** Without it Moski briefly hit 390px/s closing a gap,
+  which read as a cursor snapping rather than a creature running.
+* **Damage / death / respawn are all observed, never injected.** A rising
+  edge of `Player.hitFlashT` triggers a small visual hop; `Player.state ===
+  'DEAD'` makes Moski hold position instead of chasing a corpse; the
+  `DEAD → ALIVE` transition snaps it behind the respawned Luka. **player.js
+  was not modified at all.**
+
+Previously implemented (Phase 9 Step 3) — the discovery loop:
+
+* **State machine** `TRAPPED → RECRUITABLE → RECRUITING → FOLLOWING`, all
+  inside `companion.js`. `FOLLOWING` is a *state only* — actual follow
+  movement is Step 4 and was deliberately not written.
+* **Recruitment condition = the clearing is secured.** A Mossling counts as
+  belonging to the clearing by its **home** (`homeX/homeY`), not its current
+  position. Home never changes, so the check is completely immune to the
+  player luring the guard out and recruiting without killing it — a chasing
+  Mossling can legitimately be 260px from home, so a live-position test would
+  have been trivially exploitable, and would also flicker at the boundary.
+* **Clearing radius is read from map data, not copied.** `map.js` now exposes
+  `GLADES` read-only; `companion.js` looks up the `[300, 235, r]` entry at
+  `init()` and gets 138. There is still exactly one definition of the
+  clearing geometry.
+* **The Step 2 overlap is genuinely fixed, not hidden.** `enemy.js`
+  `SPAWN_SPOTS` had `{x:300, y:235}` — identical to Moski. Moved to
+  `{x:300, y:320}`: one value, one entry. Count stays 9, no enemy added or
+  removed, AI and combat untouched. Verified: 85px from Moski, so with the
+  46px wander leash it never gets closer than 39px, and never further than
+  131px from the clearing centre (radius 138) — it stays the clearing's
+  guardian, which is what its original comment said it was for.
+* **Prompt gating** uses the project's hysteresis idiom (28px enter / 38px
+  leave, same shape as the restart prompt's 70/92) so the button cannot
+  flicker on the boundary. It requires RECRUITABLE **and** in range **and**
+  the player alive — never merely "Moski exists".
+* **0.8s rescue event**, not a cutscene: 0.00–0.25 vines loosen and glow,
+  0.25–0.55 vines fly apart (14 existing `'reward'` particles, no new
+  particle type), 0.55–0.80 a one-shot eased hop toward Luka. The hop target
+  is computed **once** at 0.55s — re-aiming every frame would already be the
+  Step 4 follow algorithm.
+* **`MG.Audio.playCompanionRecruit()`** — E5-A5-C#6 rising triad plus a
+  highpassed sparkle, deliberately different from `playReward()`'s C-E-G-C so
+  the Moonstone and the rescue do not sound identical. Same `if (!this.ctx)
+  return;` + try/catch guard as every other cue.
+
+Previously implemented (Phase 9 Step 2) — an entity that is, deliberately, scenery:
+
+* **`MG.Companion`** in `js/companion.js` — one entity, not a framework.
+  `init()` / `update(dt)` / `collect(out, cam)` / `renderOne(ctx, m)` plus
+  three private drawing helpers. Starts `state:'TRAPPED'`, `recruited:false`
+  at the fixed world position **(300, 235)** — the centre of map.js's
+  `GLADES` entry `[300, 235, 138]`, which is already commented there as
+  "작은 공터 (PHASE 9 에서 모스키가 나타날 곳)".
+* **It is structurally inert.** It is not in `MG.Enemy.list` (so combat and
+  enemy AI cannot see it), not in `MG.Map.solids` (so it never blocks Luka),
+  has no `hp` and no `getHurtbox`. `update()` contains no code that changes
+  `x`/`y` — that absence *is* the guarantee it never leaves the clearing.
+* **Visually it is the opposite of a Mossling.** Mossling = three overlapping
+  lobes, warm moss green, yellow-green wary eyes. Moski = one smooth droplet,
+  cool teal/mint, leaf ears, soft slow blink, hovering off the ground with a
+  lightened shadow. Measured on-screen body colour: Moski `rgb(90,106,103)`
+  vs Mossling `rgb(88,114,57)` — the blue channel (103 vs 57) is the
+  discriminator, colour distance 47.
+* **The vines read as magic, not plants.** Violet (`#7b4fc0`) — a hue that
+  appears nowhere else in the forest — drawn as regular ellipse bands with
+  pulsing rune pixels, two strands *behind* the body and two *across* it so
+  the binding has real depth.
+* **Y-sorted like everything else.** `collect()` pushes
+  `{y, kind:'companion', obj}` into the existing `props` queue with the same
+  40px cull margin as `Enemy.collect`. Measured in the clearing: index 19 of
+  55, with 35 props drawn after it — it is genuinely occluded by nearer
+  trees, not pasted on top.
+
+**Nothing else was implemented.** No recruitment, no following, no companion
+AI, no Vine Bridge, no Q ability, no treasure, no save state. Nothing reads
+`MG.Input.interactPressed` yet, and Moski does not react to E.
+
+Previously implemented (Phase 9 Step 1) — input plumbing only:
+
+* **`MG.Input.interactPressed`** — a 1-frame edge flag built on exactly the
+  same pattern as `attackPressed`. Keyboard `KeyE` (per GAME_DESIGN.md
+  "E: 상호작용") produces the edge via `_eWasDown`, the mobile button sets
+  `_interactRequested`; `update()` ORs them and clears the request flag every
+  frame, consumed or not.
+* **`#btn-interact`** — a mobile button inside the existing `#touch-layer`,
+  right after `#btn-attack`. `hidden` by default; it is wired with the same
+  Pointer Events + `setPointerCapture` structure as the attack button, so the
+  two have independent `pointerId`s and can be held at the same time.
+* **`.interact-button` CSS** — sits directly above the attack button, offset
+  by `6% + clamp(58px,17vmin,84px) + 14px`, so the 14px gap is preserved at
+  every screen size because both buttons scale on the same `vmin` clamp. It
+  is added to the `body:not(.mg-touch)` hide list, and carries its own
+  `[hidden] { display: none; }` rule (required — like `.joystick-base`, it
+  declares its own `display`, which would otherwise defeat the `hidden`
+  attribute).
+* **`MG.UI.showInteract()` / `hideInteract()` / `isInteractVisible()`** —
+  visibility only. They contain no knowledge of *what* is being interacted
+  with; a later step decides that and calls them.
+
+**Nothing else was implemented.** No Moski entity, rendering, recruitment,
+following, companion AI, Vine Bridge, Q ability, or treasure access. Nothing
+reads `interactPressed` yet — it is a foundation waiting for Step 2.
+
+Previously implemented (Phase 9.3 — final polish, v0.1.11):
 
 * **The climax speaks once.** Striking the Moonstone used to fire the toast
   "달의 돌을 발견했다" *and* the victory line "숲이 정화되었다" at the same
@@ -894,10 +1104,65 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 9.3 (final polish), v0.1.11 — done, stable. Not yet committed to git
-this pass (verified locally; a commit was intentionally not made). This was
-declared the last gameplay/UI polish pass before release. The larger Phase 9
-(모스키 동료 영입, per GAME_DESIGN.md) remains unstarted.
+Phase 10 Step 3 (treasure chest) — done, stable, still v0.1.11. Not
+committed to git.
+
+**The whole prototype arc now plays end to end:** 달의 돌 → 정화 →
+모스키 발견 → 영입 → 추종 → 강둑 → 덩굴 다리 → 도강 → 보물 상자 →
+"달빛 조각을 획득했다!".
+
+**Phase 11 is untouched.** No completion screen, no inventory, no item
+system, no quest tracking. The three completion conditions the original
+design names (Moski recruited / bridge built / chest opened) are all
+observable as `MG.Companion.recruited`, `MG.Game.bridgeActivated`, and
+`MG.Map.treasure.state === 'OPEN'` — a completion screen can read those
+three booleans without any new state.
+
+**One behaviour worth knowing:** the ability does not require Moski to be
+near the anchor, only Luka. In practice Moski is always 18-32px behind Luka
+so it arrives at 0.22s of a 1.0s build, but if a future feature ever
+teleports Luka, the bridge could finish before Moski catches up.
+
+**For Step 2, the crossing is already surveyed:**
+* Anchor (984, 578) → chest (1150, 578) is a straight horizontal line, so a
+  bridge is an axis-aligned span; the river is 130px wide between x=1000 and
+  x=1130.
+* The player can walk to x=994.5 (foot box 11px against the river edge). The
+  anchor sits 22.8px from where they naturally stand, deliberately — at 986
+  it was hidden behind Luka's sprite, confirmed by screenshot.
+* Activating the bridge means removing/overriding the one solid with
+  `water: true` in `MG.Map.solids` for the crossing band only, and setting
+  `MG.Game.bridgeActivated = true`. Do not rebuild all solids; do not touch
+  collision.js.
+
+Phase 9 complete (Steps 1-4 + UI polish) — stable.
+
+**One thing deliberately left alone:** the heart HUD is still faintly visible
+behind the title overlay. It is HUD, not a control, and the polish task named
+exactly two issues — so it was not touched. If it should also hide on the
+title screen, add `#hud-hearts` to the `body:not(.mg-playing)` rule in
+style.css; that is the whole change.
+
+**Phase 9 (모스키 동료 영입) is now functionally complete**: discover →
+secure the clearing → interact → rescue → follow. Phase 10 (덩굴 다리,
+동료 능력, Q 키, 보물) remains entirely unimplemented.
+
+**Two things a future step must not break:**
+* Moski is still absent from `MG.Enemy.list` and `MG.Map.solids`, and
+  `Player.moveAndCollide()` is never called for it. That absence is what
+  keeps the sword, enemy AI, and player collision from ever seeing it.
+* Moski does not collide with trees or rocks — it drifts over them. This is
+  deliberate (it hovers, and the spec forbade obstacle pathfinding in this
+  step). If it ever needs to respect terrain, that is a design decision, not
+  a bug fix.
+
+**Note for whoever does Step 2:** `MG.Input.interactPressed` exists and is
+correct, but nothing consumes it yet. When you wire it up, read it in
+`MG.Game.update()` alongside the other per-frame checks, and drive
+`MG.UI.showInteract()` / `hideInteract()` from proximity the same way
+`updateRestartPrompt()` drives the restart prompt — including its hysteresis
+idiom (enter/leave radii), which exists precisely to stop a prompt flickering
+on the boundary.
 
 **One open tuning question for the next pass:** the spec suggested the bed
 should sit around 10–15% of gameplay SFX loudness, but the spec's own
@@ -907,6 +1172,315 @@ quiet is the safe direction, and this is an aesthetic call that needs a real
 phone speaker to judge. If it turns out to be inaudible on device, raise
 `AMBIENT.forest.windGain` to ~0.06 (and `cleansed` to ~0.045) to land inside
 the stated band. That is a two-number change in `js/audio.js`.
+
+### Phase 10 STEP 3 — 보물 상자 개봉 (버전 유지: v0.1.11)
+
+**The interesting question here was button ownership, not the chest.** The
+interact button already had an owner: `companion.js` drives it every frame
+while Moski is `RECRUITABLE`. Adding a second per-frame writer is how you get
+a button that flickers because two systems disagree.
+
+It turned out no arbitration is needed, and the reason is worth writing down:
+the chest requires `bridgeActivated`, which can only be true if Moski is
+`FOLLOWING`, and `companion.js` touches the button only in the `RECRUITABLE`
+branch. The states are mutually exclusive by construction, so the chest can
+own the button freely whenever it is eligible. `game.js` keeps its own
+`_treasurePromptShown` cache mirroring companion's `_promptShown`, so neither
+side writes to the DOM on a frame where nothing changed. If a future
+interactable ever *can* coexist with another, this reasoning stops holding and
+real arbitration becomes necessary — do not assume it stays free.
+
+**The lid is real geometry.** Rather than draw a second 'open chest' sprite,
+`drawTreasure` translates the canvas to the hinge at (x, y-10) and rotates the
+same lid rectangle by up to 1.83 rad. One code path covers closed, every frame
+of opening, and open.
+
+**The chest is deliberately not a solid.** The spec preferred that unless
+walking through looked wrong; it does not, because Y-sorting already puts Luka
+in front of it when he stands below its foot line. Making it solid would mean
+touching `buildSolids` and remembering to rebuild it on restart, for no visible
+gain.
+
+Verified at runtime: before the bridge exists the button never appears for the
+chest and E does nothing even standing on top of it; after the bridge, the
+button appears at 26px, holds to 34px on the way out and hides at 40px; E and
+the mobile button each open it exactly once (audio called once across three
+repeat presses, and again after it is OPEN); the animation runs 0.50s; 8
+particles at the crack plus 14 at the reveal; the toast fires once with
+exactly "달빛 조각을 획득했다!" and fits on one line at 375×812 (262×56, not
+clipped, clear of the joystick). Player death leaves the chest OPEN with the
+bridge active and Moski recruited; `restartSession()` returns it to CLOSED with
+`openT` 0 and clears the prompt cache. Regression: movement, sword (3→2),
+Mossling chase and damage, Moski recruitment/following (31.7px), vine bridge
+(2 water segments), Moonstone → cleansing all unchanged. No inventory, no
+completion screen, no item database anywhere in the bundle. Console errors: 0.
+
+### Phase 10 STEP 2 — 덩굴 다리 능력 (버전 유지: v0.1.11)
+
+**The collision approach is the part to understand.** The river was one solid
+spanning the whole map height. Rather than teach `collision.js` about bridge
+state (a change rippling through every collision query), `setBridgeOpen(true)`
+splits that one rectangle into two — above and below the crossing — and the
+gap between them *is* the walkable bridge. `collision.js` never learns the
+bridge exists. This works because `player.js` and `enemy.js` both do
+`var solids = (MG.Map && MG.Map.solids) || []` on every call, so editing the
+array in place takes effect on the next frame. `resetBridge()` puts the single
+full-height solid back on session restart.
+
+Measured: before activation the crossing is blocked; it stays blocked through
+the entire build and only opens on the completion frame; afterwards the player
+walks across (990 → 1130, stepwise, no teleport) while y = 200/400/520/640/700
+all still stop dead at x = 994.5. Two water segments, y 0–565 and y 591–810.
+
+**Why the bridge is not Y-sorted.** Every other world object goes through
+`collectProps`. The bridge does not, on purpose: it is a floor. If it were
+sorted by its own y it would draw *over* Luka whenever he stood slightly above
+its centre line. It is drawn immediately after the water instead — above the
+river, below everything that walks on it.
+
+**A testing note for whoever comes next.** Two of my early runs looked like
+bugs and were not. Parking Luka next to the anchor for 10 seconds let the
+water's-edge Mossling kill him, and `canUseAbility()` correctly refused to
+arm while `Player.state === 'DEAD'`. And teleporting Luka to the bank (rather
+than walking) leaves Moski hundreds of pixels behind, so it cannot reach the
+anchor during the build. Both are artifacts of driving the game from the
+console; neither reproduces in real play.
+
+Verified at runtime: Q and the mobile button each trigger exactly once (audio
+called once across three repeat presses); build lasts 1.00s; Moski travels at
+170px/s max with no frame step over 2.83px; on completion `bridge.built` and
+`Game.bridgeActivated` both become true, the button hides, further Q does
+nothing, and the toast fires once with "덩굴 다리가 완성되었다."; Moski
+returns to FOLLOWING and follows Luka across (31.8px trail). Player death
+preserves the bridge and recruitment; restart returns the river to a single
+solid, Moski to TRAPPED, and hides the button. The bridge works identically
+after cleansing (independent of `Game.cleansed`). Button layout at 375×812:
+ability 224–280, attack 294–358 (14px gap), interact 302–358 at a different
+height — no pair overlaps, 18px clear of the joystick zone; landscape
+812×375 likewise. Regression: movement, sword (3→2), Mossling chase and
+damage, Moonstone → cleansing all unchanged. Chest state never changes and
+there is no open/inventory function anywhere. Console errors: 0.
+
+### Phase 10 STEP 1 — 막힌 강 / 보이는 보물 / 덩굴 앵커 (버전 유지: v0.1.11)
+
+This step was mostly an audit, and the audit found one thing that mattered.
+
+**The stale comment.** `map.js` documented the treasure glade at x=1200 with
+the reasoning "the bank view spans x 754–1234, so the treasure must sit
+inside it." That arithmetic was correct for a 640px-wide camera. The portrait
+conversion (v0.1.1) made the camera 360px and nobody revisited the note. The
+real span from the bank is x 814–1174, measured. Had the chest been placed at
+the documented spot it would never have appeared on screen, and the whole
+emotional premise of Phase 10 — *"I saw this before and couldn't reach it"* —
+would have quietly failed. The comment has been corrected in place so the
+next person does not repeat it.
+
+**What was deliberately NOT changed:** the river, the paths, the Moonstone
+area, the glades, and every collision primitive. The blocked gap the design
+asks for already existed and is genuinely impassable — proven by BFS over the
+real solids, not by inspection. Re-cutting the map to match the original
+Prototype 0.1 sketch would have destroyed a working world for no gain.
+
+**Why the anchor moved.** It was first placed at (986, 600), which is 4px
+from where the player stands at the bank — a screenshot showed it completely
+hidden behind Luka. (984, 578) keeps it at the water's edge and on the chest's
+line while sitting clear of the sprite.
+
+Verified at runtime: BFS 21,117 nodes still cannot reach the east bank
+(max x 990) and no bypass exists; neither prop is a solid and the anchor does
+not block the bank; from the bank both are on screen together (anchor at
+screen x=170, chest at x=336) with the river between them; both are
+measurably distinct from grass (anchor Δ19 with 20 violet rune px, chest Δ28
+with 218 wood px, grass has 0 of either); both enter the existing Y-sort
+queue. Q does nothing; there is no ability button (only btn-attack and
+btn-interact); no bridge solid exists; swinging the sword at the anchor
+changes nothing. Regression: movement, sword (3→2), Mossling chase + damage
+(5→3), Moski recruitment and following (31.7px trail), Moonstone → cleansing
+(all dissolved, atmosphere 0→1), restart all unchanged — and the bridge flag
+is still false after cleansing and after restart. Console errors: 0.
+
+### Phase 9 UI 폴리시 — 문구 잘림 / 타이틀 화면 버튼 (버전 유지: v0.1.11)
+
+Two real-phone bugs. Both root causes are worth remembering:
+
+1. **`white-space: nowrap` on `.hud-toast` was a leftover assumption.** It was
+   fine when the only toast was the short 달의 돌 notice. The Phase 9
+   recruitment line is 20 characters, which at the clamped 21px font needs
+   ~445px — far past the container, so it clipped. Removing nowrap alone was
+   not enough: the toast is absolutely positioned, so it shrink-to-fits, and
+   with `word-break: keep-all` it collapsed to the width of the longest 어절
+   and stacked **five** short lines. The fix that actually works is
+   `width: max-content` **plus** `max-width: 84%` — ask for the unwrapped
+   width first, then clamp, so the box fills the space it is allowed and
+   wraps only inside it. Measured 2 lines at 375px, 375×86px box.
+   `word-break: keep-all` is what keeps Korean from breaking mid-word.
+   `.hud-victory` and `.hud-restart` still use nowrap on purpose — both are
+   short and must stay on one line.
+2. **Touch controls had no lifecycle at all.** `body:not(.mg-touch)` was the
+   only thing hiding them, so on any touch device the sword button was live
+   from the first paint, behind the title. Desktop looked correct purely by
+   accident. The fix adds `mg-playing` to the same hide rule and toggles it
+   where the state already changes — `Game.init()` removes it, 
+   `startAdventure()` adds it. No timers, no new input layer, and the rule
+   matrix was verified for all four class combinations.
+
+Verified at runtime: fresh 375×812 load shows title only (attack, joystick,
+joystick-base and interact all `display:none`); after 모험 시작 the attack
+button and joystick zone return and both respond; the recruitment message
+renders the exact string once, unclipped, 2 lines at 375×812 (315×86 box),
+2 lines in landscape (177×54, 13px) and 2 lines on desktop 1280×800
+(378×86), always inside the stage and clear of the joystick zone; CSS rule
+matrix correct for touch/desktop x title/play; Moski following unchanged
+(31.7px trail while running, 0 jitter once settled, restart returns it to
+TRAPPED at 300,235); keyboard move/Space/E all still work. Console errors: 0.
+
+### Phase 9 STEP 4 — 모스키 추종 이동 (버전 유지: v0.1.11)
+
+**The one thing worth reading here: separation had to become a constraint.**
+
+The first implementation pushed Moski out of Luka with a damped force, the
+same exponential shape as the follow steering. It looked reasonable and it
+was wrong. Measured on a hard direction reversal, Moski reached **3.2px from
+Luka's centre** — well inside his body. The reason is that three things pull
+it inward at once on a reversal: the anchor has jumped to the far side, the
+damped push only resolves ~23% of the overlap per frame, and Luka is walking
+*into* Moski at 84px/s. The force loses.
+
+Replacing it with a position constraint — project onto the 13px circle every
+frame — fixed it exactly. The feared jitter never appeared, because the
+incoming motion is already smooth, so the projected point moves smoothly too.
+It also produced the behaviour the spec actually wanted for free: Moski now
+*rides around* the circle to reach the far side instead of cutting through.
+Measured during a reversal, its Y offset traces 0 → -6.4 → -10.2 → -6.8 → -2
+while separation holds at exactly 13.0 — a real arc.
+
+The second measured fix was a **150px/s speed cap**. Uncapped, the damping
+briefly moved Moski at 390px/s (6.5px per frame) when closing a large gap.
+That is not a creature, it is a cursor. 150 keeps it faster than Luka (84)
+so it can still catch up, without ever looking like it teleports — verified
+at exactly 2.5px/frame maximum afterwards.
+
+A note on `snapBehindPlayer()`: it is called in exactly one place, the
+`DEAD → ALIVE` transition. Do not reach for it anywhere else — every other
+placement must be smooth, and a snap is precisely what the spec forbade.
+
+Verified at runtime: follows correctly up/down/left/right/diagonal (always on
+the far side from the facing direction); 0 drift over 2s while idle; max
+speed 150px/s and minimum separation exactly 13.0 through both a hard
+reversal and eight rapid direction changes; placed exactly on Luka it
+resolves to 13.0 in a single frame while Luka walks on unimpeded (56px);
+attacking beside Moski leaves it FOLLOWING and it does not flee; player
+damage triggers the hop and preserves recruitment; during death Moski moves
+**0px** and stays recruited; on respawn it appears 13px behind the respawned
+Luka rather than at the death site; restart returns it to TRAPPED at
+(300,235). Regression: movement, sword (hp 3→2), Mossling chase + damage
+(5→3), Moonstone → cleansing (all dissolved, atmosphere 0→1), joystick,
+attack button all unchanged; Y-sort index 21 of 52 with 0 violations; camera
+still follows Luka only. Mobile 375×812 and landscape 812×375 both verified,
+including recruitment via the mobile button and following driven by the real
+joystick. Console errors: 0.
+
+### Phase 9 STEP 3 — 모스키 영입 + 구출 이벤트 (버전 유지: v0.1.11)
+
+Four decisions worth understanding before changing any of this:
+
+1. **"Clearing secured" is judged by home, not by current position.** This is
+   the single most load-bearing choice in the step. Mosslings chase up to
+   260px from home, so testing live positions would let a player lure the
+   guard away and recruit Moski without ever fighting — and would make the
+   state flicker whenever the guard wandered across the radius. Home
+   coordinates never change, so the test is stable and unexploitable.
+2. **The clearing radius is not written down twice.** `map.js` exposes
+   `GLADES`; `companion.js` looks up its own glade and caches the radius in
+   `init()`. If the clearing is ever resized, only map.js changes. The
+   hardcoded 138 in companion.js is a fallback for "map data unreadable",
+   not a second definition.
+3. **The hop target is computed once, on purpose.** At t=0.55s the code
+   snapshots a point 16px in front of Luka and eases to it. Recomputing that
+   each frame would be follow steering, which belongs to Step 4. If Step 4
+   replaces the settle, delete the snapshot rather than extending it.
+4. **The overlap fix was a data change, not a rendering trick.** One entry in
+   `SPAWN_SPOTS` moved 85px south. The guard is still inside the clearing at
+   every point of its wander, so the scene still reads as "a Mossling guards
+   this clearing" — which is what that spawn was always for.
+
+Verified at runtime: 0 enemies at (300,235) with the count still 9; killing
+the 8 unrelated Mosslings leaves Moski TRAPPED; killing the clearing guard
+makes it RECRUITABLE; the button is hidden at 60/40/33px, appears at 27px,
+stays visible at 33px on the way out (hysteresis) and hides at 39px; E and
+the mobile button each trigger exactly once (audio called once across four
+repeat presses); the event runs 0.82s; vine pixels measured 103 → **0**
+(the residual 16 violet px in frame are background firefly motes, confirmed
+identical with Moski removed from the render); the toast fires once with the
+exact string; final state FOLLOWING / recruited true. Player death preserves
+FOLLOWING + recruited; `restartSession()` returns Moski to TRAPPED at
+(300,235). Moski still absent from `MG.Enemy.list` and `MG.Map.solids` after
+recruitment. Regression: movement, sword (hp 3→2), Mossling chase + damage
+(5→3), Moonstone → cleansing (all dissolved, atmosphere 0→1), joystick and
+attack button all unchanged. Console errors: 0.
+
+### Phase 9 STEP 2 — 모스키 엔티티 + 갇힌 상태 (버전 유지: v0.1.11)
+
+Three notes for whoever writes Step 3:
+
+1. **`update()` has no movement code, and that is the design.** Rather than
+   guarding position with an `if (state === 'TRAPPED') return;`, there is
+   simply nothing that writes `x`/`y`. When you add following in Step 3, add
+   it behind a state check so TRAPPED keeps that property by construction.
+2. **Moski is not an enemy and not a solid — keep it that way.** It stays out
+   of `MG.Enemy.list` and `MG.Map.solids`, which is *why* the sword cannot
+   hit it, enemy AI ignores it, and Luka walks straight through. If a future
+   step wants Moski to block movement or take a hit, that is a real design
+   change, not a bug fix.
+3. **The render hook is a `kind` branch, nothing more.** `game.js` gained
+   three one-line hooks (update, collect, a `kind === 'companion'` branch)
+   and `main.js` one `init()` call. The render architecture, the camera, and
+   the props queue were not touched.
+
+Verified at runtime, not by inspection: `init()` restores all six fields
+exactly; rendering proven by differential frame comparison (344 px / 21.5%
+of a 40×40 region change when Moski is drawn, 46 teal body px + 118 violet
+vine px); idle animation moves 328 px over 0.4s while `x`/`y` stay exactly
+(300, 235); sword swing beside it leaves state/position untouched and Luka
+walks through it; E fires its edge but changes nothing on Moski; the interact
+button stays hidden even standing next to it. Regression: movement, sword
+(hp 3→2), Mossling chase + contact damage (5→3), Moonstone → cleansing (9
+Mosslings dissolved, atmosphere 0→1), restart prompt and restart all
+unchanged, with Moski still TRAPPED afterwards. Verified in both desktop and
+mobile landscape (812×375). Console errors: 0.
+
+### Phase 9 STEP 1 — 상호작용 입력 / UI 토대 (버전 유지: v0.1.11)
+
+Foundation only. Three things to know:
+
+1. **`interactPressed` is computed, never latched.** `update()` recomputes it
+   from `_interactRequested || eEdge` every frame and immediately clears
+   `_interactRequested`. There is no "consume" call to make — read it during
+   the frame and it is gone by the next one. This mirrors `attackPressed`
+   exactly; do not invent a different contract for it.
+2. **`.interact-button[hidden] { display: none; }` is load-bearing.** The
+   button sets `display: flex` itself, which beats the `hidden` attribute's
+   UA style. Without that rule the button would be visible from boot. The
+   same rule already exists for `.joystick-base` for the same reason — if you
+   add another touch control, it needs one too.
+3. **`hideInteract()` hides instantly, on purpose.** Text elements (toast,
+   victory, restart prompt) fade out on a timer before going `hidden`. A
+   *control* must not do that — a button that is still on screen while fading
+   can absorb a tap the game no longer expects. Show fades in; hide is
+   immediate, and it also clears the pressed visual and
+   `MG.Input._interactPointerId`.
+
+Verified at runtime: E fires exactly one frame per press, ignores
+`e.repeat`, re-fires after release; `reset()` clears every interaction field;
+holding E does not affect movement (moved 35px right, 35px up) and does not
+trigger an attack; Space still attacks and does not interact; the sword still
+lands (모슬링 hp 3→2). Mobile 375×812: button hidden by default
+(`display: none`, height 0), appears only via `showInteract()`, 56×56 tap
+target with a measured **14px** gap above the attack button and **96px**
+clear of the joystick zone; a tap sets the edge for exactly one frame;
+attack button and joystick behave identically; both buttons can be held
+simultaneously on independent pointer ids. Landscape 812×375 unchanged, with
+the same 14px gap when shown. Console clean.
 
 ### v0.1.11 — PHASE 9.3: 마지막 폴리시 (출시 전)
 

@@ -23,6 +23,8 @@
       this.el.toast = document.getElementById('hud-toast');     // PHASE 8
       this.el.victory = document.getElementById('hud-victory'); // PHASE 8.1
       this.el.restart = document.getElementById('hud-restart'); // PHASE 9.1
+      this.el.interact = document.getElementById('btn-interact'); // PHASE 9 STEP 1
+      this.el.ability = document.getElementById('btn-ability');   // PHASE 10 STEP 2
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -240,6 +242,77 @@
       if (immediate) { el.hidden = true; return; }
       // 페이드아웃(style.css 의 500ms)이 끝난 뒤에 DOM 에서 뺀다
       this._restartHide = global.setTimeout(function () { el.hidden = true; }, 550);
+    },
+
+    /* PHASE 9 STEP 1: 모바일 상호작용 버튼의 표시 여부만 담당한다.
+       여기에는 '무엇과' 상호작용하는지에 대한 지식이 전혀 없다 — 그건 이후
+       단계에서 게임 로직이 판단해 이 헬퍼를 부른다.
+       나타날 때만 짧게 페이드인하고, 숨길 때는 지연 없이 즉시 hidden 으로 뺀다.
+       (컨트롤이므로 사라지는 중에 탭이 먹히면 안 된다 — 문구용 페이드아웃과
+        다르게 다뤄야 하는 지점이다) */
+    showInteract: function () {
+      if (!this.el.interact) this.el.interact = document.getElementById('btn-interact');
+      var el = this.el.interact;
+      if (!el || !el.hidden) return;
+
+      el.hidden = false;
+      void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록
+      el.classList.add('is-visible');
+    },
+
+    hideInteract: function () {
+      if (!this.el.interact) this.el.interact = document.getElementById('btn-interact');
+      var el = this.el.interact;
+      if (!el) return;
+
+      el.classList.remove('is-visible');
+      el.classList.remove('is-pressed');
+      el.hidden = true;
+
+      // 버튼이 눌린 채로 사라졌을 때를 대비해 입력 쪽 눌림 상태도 정리한다
+      if (MG.Input && MG.Input.setInteractPressedVisual) {
+        MG.Input._interactPointerId = null;
+        MG.Input.setInteractPressedVisual(false);
+      }
+    },
+
+    isInteractVisible: function () {
+      if (!this.el.interact) this.el.interact = document.getElementById('btn-interact');
+      return !!(this.el.interact && !this.el.interact.hidden);
+    },
+
+    /* PHASE 10 STEP 2: 능력 버튼. 상호작용 버튼과 완전히 같은 규칙이다 —
+       표시 여부만 담당하고, 무엇을 할 수 있는지는 companion.js 가 판단한다.
+       나타날 때만 짧게 페이드인하고, 숨길 때는 지연 없이 즉시 뺀다
+       (사라지는 중인 버튼이 탭을 먹으면 안 된다). */
+    showAbility: function () {
+      if (!this.el.ability) this.el.ability = document.getElementById('btn-ability');
+      var el = this.el.ability;
+      if (!el || !el.hidden) return;
+
+      el.hidden = false;
+      void el.offsetWidth;
+      el.classList.add('is-visible');
+    },
+
+    hideAbility: function () {
+      if (!this.el.ability) this.el.ability = document.getElementById('btn-ability');
+      var el = this.el.ability;
+      if (!el) return;
+
+      el.classList.remove('is-visible');
+      el.classList.remove('is-pressed');
+      el.hidden = true;
+
+      if (MG.Input && MG.Input.setAbilityPressedVisual) {
+        MG.Input._abilityPointerId = null;
+        MG.Input.setAbilityPressedVisual(false);
+      }
+    },
+
+    isAbilityVisible: function () {
+      if (!this.el.ability) this.el.ability = document.getElementById('btn-ability');
+      return !!(this.el.ability && !this.el.ability.hidden);
     }
   };
 

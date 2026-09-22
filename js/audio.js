@@ -456,6 +456,178 @@
     /* PHASE 6.2: 모슬링 돌진이 플레이어에 닿았을 때 — 검 타격음(사각파, 밝고 높음)
        이나 처치음(노이즈, 길게 잦아듦)과는 확실히 다른, 둔탁하고 낮은 "퍽" 톤을
        사인파로 만든다. 데미지가 아니라 "닿았다"는 신호일 뿐이라 자극적이지 않게. */
+    /* PHASE 9 STEP 3: 모스키 영입. playReward(달의 돌)와 헷갈리지 않도록
+       더 높고 짧은 3음 상행으로 짓고, 위에 작은 반짝임을 얹는다.
+       ctx 가 없거나(제스처 전) 브라우저가 막으면 조용히 넘어간다 — 기존
+       효과음들과 완전히 같은 방어 패턴이다. */
+    playCompanionRecruit: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        // E5 - A5 - C#6 — 밝게 열리는 3음 상행
+        var notes = [659.25, 880.00, 1108.73];
+        for (var i = 0; i < notes.length; i++) {
+          var start = now + i * 0.085;
+
+          var osc = ctx.createOscillator();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(notes[i], start);
+
+          var gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.55);
+
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + 0.6);
+        }
+
+        // 덩굴이 부서지는 순간에 얹히는 짧은 반짝임
+        if (this._noiseBuffer) {
+          var spark = ctx.createBufferSource();
+          spark.buffer = this._noiseBuffer;
+
+          var hp = ctx.createBiquadFilter();
+          hp.type = 'highpass';
+          hp.frequency.value = 4200;
+
+          var sg = ctx.createGain();
+          sg.gain.setValueAtTime(0.0001, now + 0.22);
+          sg.gain.exponentialRampToValueAtTime(0.10, now + 0.26);
+          sg.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+
+          spark.connect(hp).connect(sg).connect(ctx.destination);
+          spark.start(now + 0.22);
+          spark.stop(now + 0.55);
+        }
+      } catch (e) {}
+    },
+
+    /* PHASE 10 STEP 2: 덩굴 다리. 달의 돌 보상음(밝은 종소리 아르페지오)이나
+       영입음(상행 3음)과 헷갈리지 않도록 성격을 다르게 지었다 — 낮게 부풀어
+       오르는 유기적인 스웰(덩굴이 자라는 소리) + 나무 결 같은 짧은 노이즈,
+       그리고 맨 끝에 아주 작은 완성 종소리 하나. */
+    playVineBridge: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        // 1) 자라나는 스웰 — 톱니를 로우패스로 눌러 "쭉 뻗는" 결을 만든다
+        var osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(110, now);
+        osc.frequency.exponentialRampToValueAtTime(330, now + 0.55);
+
+        var lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.Q.value = 3;
+        lp.frequency.setValueAtTime(300, now);
+        lp.frequency.exponentialRampToValueAtTime(1800, now + 0.6);
+
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.16, now + 0.18);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
+
+        osc.connect(lp).connect(g).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.9);
+
+        // 2) 나무/덩굴이 엮이는 결 — 밴드패스로 깎은 짧은 노이즈 두 번
+        if (this._noiseBuffer) {
+          for (var i = 0; i < 2; i++) {
+            var st = now + 0.22 + i * 0.18;
+            var src = ctx.createBufferSource();
+            src.buffer = this._noiseBuffer;
+            src.playbackRate.value = 0.6;
+
+            var bp = ctx.createBiquadFilter();
+            bp.type = 'bandpass';
+            bp.frequency.value = 900 + i * 350;
+            bp.Q.value = 1.2;
+
+            var ng = ctx.createGain();
+            ng.gain.setValueAtTime(0.0001, st);
+            ng.gain.exponentialRampToValueAtTime(0.07, st + 0.02);
+            ng.gain.exponentialRampToValueAtTime(0.0001, st + 0.16);
+
+            src.connect(bp).connect(ng).connect(ctx.destination);
+            src.start(st);
+            src.stop(st + 0.2);
+          }
+        }
+
+        // 3) 완성 종소리 — 아주 작게 하나만
+        var chime = ctx.createOscillator();
+        chime.type = 'triangle';
+        chime.frequency.setValueAtTime(1174.66, now + 0.86);   // D6
+        var cg = ctx.createGain();
+        cg.gain.setValueAtTime(0.0001, now + 0.86);
+        cg.gain.exponentialRampToValueAtTime(0.11, now + 0.89);
+        cg.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
+        chime.connect(cg).connect(ctx.destination);
+        chime.start(now + 0.86);
+        chime.stop(now + 1.4);
+      } catch (e) {}
+    },
+
+    /* PHASE 10 STEP 3: 보물 상자. 앞선 세 소리와 성격이 겹치지 않게 지었다 —
+       달의 돌은 종소리 아르페지오, 영입은 상행 3음, 다리는 낮은 스웰이었다.
+       여기는 "나무 뚜껑이 삐걱 열리고(짧은 노이즈) 안에서 아주 맑은 두 음이
+       올라오는" 구성이다. */
+    playTreasureOpen: function () {
+      if (!this.ctx) return;
+      try {
+        var ctx = this.ctx;
+        var now = ctx.currentTime;
+
+        // 1) 뚜껑이 열리는 나무 소리 — 밴드패스가 위로 훑고 지나간다
+        if (this._noiseBuffer) {
+          var creak = ctx.createBufferSource();
+          creak.buffer = this._noiseBuffer;
+          creak.playbackRate.value = 0.5;
+
+          var bp = ctx.createBiquadFilter();
+          bp.type = 'bandpass';
+          bp.Q.value = 4;
+          bp.frequency.setValueAtTime(420, now);
+          bp.frequency.exponentialRampToValueAtTime(1500, now + 0.22);
+
+          var cg = ctx.createGain();
+          cg.gain.setValueAtTime(0.0001, now);
+          cg.gain.exponentialRampToValueAtTime(0.09, now + 0.03);
+          cg.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+
+          creak.connect(bp).connect(cg).connect(ctx.destination);
+          creak.start(now);
+          creak.stop(now + 0.3);
+        }
+
+        // 2) 달빛 조각 — 아주 맑은 두 음이 위로 열린다 (A6 -> E7)
+        var notes = [1760.00, 2637.02];
+        for (var i = 0; i < notes.length; i++) {
+          var st = now + 0.26 + i * 0.10;
+
+          var osc = ctx.createOscillator();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(notes[i], st);
+
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, st);
+          g.gain.exponentialRampToValueAtTime(0.13, st + 0.015);
+          g.gain.exponentialRampToValueAtTime(0.0001, st + 0.6);
+
+          osc.connect(g).connect(ctx.destination);
+          osc.start(st);
+          osc.stop(st + 0.65);
+        }
+      } catch (e) {}
+    },
+
     playPlayerContact: function () {
       if (!this.ctx) return;
       try {

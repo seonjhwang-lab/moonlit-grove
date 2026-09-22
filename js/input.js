@@ -25,6 +25,8 @@
     keys: {},                  // code -> true/false
     axis: { x: 0, y: 0 },      // 정규화된 이동 입력 (-1 ~ 1), 키보드/터치 통합
     attackPressed: false,      // 공격 버튼이 "이번 프레임에" 눌렸는지 (1프레임 엣지)
+    interactPressed: false,    // PHASE 9-1: 상호작용(E / 모바일 버튼) 1프레임 엣지
+    abilityPressed: false,     // PHASE 10-2: 동료 능력(Q / 모바일 버튼) 1프레임 엣지
     hasTouch: false,
 
     _joyPointerId: null,
@@ -33,6 +35,12 @@
     _touchAxis: { x: 0, y: 0 },
     _attackPointerId: null,
     _attackRequested: false,
+    _interactPointerId: null,
+    _interactRequested: false,
+    _eWasDown: false,
+    _abilityPointerId: null,
+    _abilityRequested: false,
+    _qWasDown: false,
 
     init: function () {
       var self = this;
@@ -69,8 +77,21 @@
       this._joyPointerId = null;
       this._attackPointerId = null;
       this._attackRequested = false;
+      // PHASE 9-1: 상호작용 상태도 남김없이 지운다 (탭 전환/블러로 버튼이 눌린
+      // 채 남아 다음 프레임에 유령 상호작용이 발생하는 것을 막는다)
+      this._interactPointerId = null;
+      this._interactRequested = false;
+      this._eWasDown = false;
+      this.interactPressed = false;
+      // PHASE 10-2: 능력 입력도 같은 이유로 남김없이 지운다
+      this._abilityPointerId = null;
+      this._abilityRequested = false;
+      this._qWasDown = false;
+      this.abilityPressed = false;
       this.hideJoystick();
       this.setAttackPressedVisual(false);
+      this.setInteractPressedVisual(false);
+      this.setAbilityPressedVisual(false);
     },
 
     isDown: function (code) {
@@ -84,7 +105,9 @@
         zone: document.getElementById('joystick-zone'),
         base: document.getElementById('joystick-base'),
         knob: document.getElementById('joystick-knob'),
-        attackBtn: document.getElementById('btn-attack')
+        attackBtn: document.getElementById('btn-attack'),
+        interactBtn: document.getElementById('btn-interact'),  // PHASE 9 STEP 1
+        abilityBtn: document.getElementById('btn-ability')      // PHASE 10 STEP 2
       };
       if (!this.el.zone || !this.el.attackBtn) return;
 
@@ -136,6 +159,55 @@
       };
       this.el.attackBtn.addEventListener('pointerup', releaseAttack);
       this.el.attackBtn.addEventListener('pointercancel', releaseAttack);
+
+      /* PHASE 9 STEP 1: 상호작용 버튼. 공격 버튼과 완전히 같은 Pointer Events
+         구조를 쓰고, 키보드 E 와 같은 _interactRequested 플래그를 세운다 —
+         새 터치 아키텍처를 만들지 않는다. 평소에는 hidden 이며
+         MG.UI.showInteract() 가 불릴 때만 화면에 나타난다. */
+      if (this.el.interactBtn) {
+        this.el.interactBtn.addEventListener('pointerdown', function (e) {
+          if (self._interactPointerId !== null) return;
+          self._interactPointerId = e.pointerId;
+          self._interactRequested = true;
+          self.setInteractPressedVisual(true);
+          if (self.el.interactBtn.setPointerCapture) {
+            try { self.el.interactBtn.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+          e.preventDefault();
+        });
+
+        var releaseInteract = function (e) {
+          if (e.pointerId !== self._interactPointerId) return;
+          self._interactPointerId = null;
+          self.setInteractPressedVisual(false);
+        };
+        this.el.interactBtn.addEventListener('pointerup', releaseInteract);
+        this.el.interactBtn.addEventListener('pointercancel', releaseInteract);
+      }
+
+      /* PHASE 10 STEP 2: 동료 능력 버튼. 공격/상호작용 버튼과 완전히 같은
+         Pointer Events 구조이고, 키보드 Q 와 같은 _abilityRequested 를 세운다.
+         평소에는 hidden 이며 MG.UI.showAbility() 가 불릴 때만 나타난다. */
+      if (this.el.abilityBtn) {
+        this.el.abilityBtn.addEventListener('pointerdown', function (e) {
+          if (self._abilityPointerId !== null) return;
+          self._abilityPointerId = e.pointerId;
+          self._abilityRequested = true;
+          self.setAbilityPressedVisual(true);
+          if (self.el.abilityBtn.setPointerCapture) {
+            try { self.el.abilityBtn.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+          e.preventDefault();
+        });
+
+        var releaseAbility = function (e) {
+          if (e.pointerId !== self._abilityPointerId) return;
+          self._abilityPointerId = null;
+          self.setAbilityPressedVisual(false);
+        };
+        this.el.abilityBtn.addEventListener('pointerup', releaseAbility);
+        this.el.abilityBtn.addEventListener('pointercancel', releaseAbility);
+      }
     },
 
     showJoystickAt: function (x, y) {
@@ -183,6 +255,18 @@
       }
     },
 
+    setInteractPressedVisual: function (pressed) {
+      if (this.el && this.el.interactBtn) {
+        this.el.interactBtn.classList.toggle('is-pressed', pressed);
+      }
+    },
+
+    setAbilityPressedVisual: function (pressed) {
+      if (this.el && this.el.abilityBtn) {
+        this.el.abilityBtn.classList.toggle('is-pressed', pressed);
+      }
+    },
+
     /* 매 프레임 이동 입력을 갱신 (player.js 가 axis 를, 이후 combat.js 가
        attackPressed 를 사용한다) */
     update: function () {
@@ -208,6 +292,23 @@
 
       this.attackPressed = this._attackRequested || spaceEdge;
       this._attackRequested = false;
+
+      /* PHASE 9 STEP 1: 상호작용도 공격과 똑같은 1프레임 엣지다. keydown 핸들러가
+         이미 e.repeat 를 걸러내지만, 키를 누르고 있는 동안 매 프레임 발화하지
+         않도록 여기서도 눌림 전환만 잡는다. 소비 여부와 무관하게 매 프레임 새로
+         계산되므로 플래그가 다음 프레임까지 남지 않는다. */
+      var eEdge = this.isDown('KeyE') && !this._eWasDown;
+      this._eWasDown = this.isDown('KeyE');
+
+      this.interactPressed = this._interactRequested || eEdge;
+      this._interactRequested = false;
+
+      // PHASE 10 STEP 2: 능력도 완전히 같은 1프레임 엣지다.
+      var qEdge = this.isDown('KeyQ') && !this._qWasDown;
+      this._qWasDown = this.isDown('KeyQ');
+
+      this.abilityPressed = this._abilityRequested || qEdge;
+      this._abilityRequested = false;
     }
   };
 

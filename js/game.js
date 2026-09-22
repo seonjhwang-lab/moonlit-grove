@@ -44,6 +44,13 @@
   var RESTART_ENTER_RADIUS = 70;   // 이 안으로 들어오면 문구가 뜬다
   var RESTART_LEAVE_RADIUS = 92;   // 이 밖으로 나가야 사라진다
 
+  /* PHASE 10 STEP 3: 보물 상자.
+     사거리는 모스키 상호작용(28/38)과 같은 값을 쓴다 — 같은 버튼, 같은 입력,
+     같은 체감이어야 하기 때문이다. 경계에서 깜빡이지 않도록 히스테리시스도 동일. */
+  var TREASURE_ENTER = 28;
+  var TREASURE_LEAVE = 38;
+  var TREASURE_OPEN_TIME = 0.55;   // 초 — 뚜껑이 열리는 연출 (게임은 멈추지 않는다)
+
   var Game = {
     VERSION: '0.1.11',
     WIDTH: INTERNAL_W,
@@ -66,6 +73,16 @@
        사망/부활로는 절대 되돌아가지 않는다 — Player.respawn() 은 모슬링만
        MG.Enemy.init() 으로 되돌리고 이 값은 건드리지 않기 때문이다. */
     moonstoneFound: false,
+    /* PHASE 10 STEP 1: 덩굴 다리의 상태 자리만 만들어 둔다.
+       이 단계에서는 누구도 true 로 바꾸지 않는다 — 능력(STEP 2)이 생기면
+       그때 이 플래그를 켜고, 그때 비로소 강의 충돌을 걷어내게 된다.
+       지금은 항상 false 이며, 따라서 강은 계속 막혀 있다. */
+    bridgeActivated: false,
+
+    // PHASE 10 STEP 3: 상자 상호작용 버튼 상태 캐시 (DOM 을 매 프레임 건드리지
+    // 않기 위한 것 — companion.js 의 _promptShown 과 같은 방식)
+    _treasureInRange: false,
+    _treasurePromptShown: false,
 
     /* PHASE 8.1-B: 숲이 정화되었는가. moonstoneFound 와 마찬가지로 이번
        세션 동안만 유지되는 불린 하나이며, 사망/부활로 절대 되돌아가지
@@ -122,6 +139,9 @@
 
       this.resize();
       this.state = 'TITLE';
+      // PHASE 9 폴리시: 타이틀 동안에는 조작 컨트롤을 숨긴다(style.css 의
+      // body:not(.mg-playing) 규칙). 상태와 함께 켜고 끄므로 타이머가 필요 없다.
+      document.body.classList.remove('mg-playing');
       this.start();
       return true;
     },
@@ -224,6 +244,8 @@
     /* 타이틀 화면에서 "모험 시작"을 눌렀을 때 */
     startAdventure: function () {
       this.state = 'PLAY';
+      // PHASE 9 폴리시: 여기서부터 조작 컨트롤이 나타난다 (타이틀에서는 숨겨져 있었다)
+      document.body.classList.add('mg-playing');
       if (MG.UI && MG.UI.hideTitle) MG.UI.hideTitle();
     },
 
@@ -255,8 +277,10 @@
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
+      if (MG.Companion && MG.Companion.update) MG.Companion.update(dt);  // PHASE 9 STEP 2
       this.updateMoonstone(dt);
       this.updateCleansing(dt);
+      this.updateTreasure(dt);        // PHASE 10 STEP 3
       this.updateRestartPrompt();
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
@@ -324,6 +348,89 @@
       this.startCleansing(m.x, m.y);
     },
 
+    /* PHASE 10 STEP 3: 보물 상자 — 덩굴 다리를 놓은 뒤에만 열 수 있다.
+
+       상호작용 버튼은 새로 만들지 않고 모스키가 쓰던 #btn-interact 를 그대로
+       쓴다. 두 주인이 버튼을 두고 다투지 않는 이유는 구조적이다:
+       companion.js 는 오직 RECRUITABLE 상태에서만 버튼을 매 프레임 제어하는데,
+       상자는 bridgeActivated 를 요구하고 그건 모스키가 이미 FOLLOWING 이라는
+       뜻이다. 두 조건은 동시에 참이 될 수 없다(게다가 모스키 공터와 상자는
+       880px 떨어져 있어 사거리 28px 가 겹칠 수도 없다). */
+    updateTreasure: function (dt) {
+      if (!MG.Map || !MG.Map.treasure) return;
+      var tr = MG.Map.treasure;
+
+      // 열리는 중 — 연출만 진행하고 상호작용은 받지 않는다(중복 개봉 차단)
+      if (tr.state === 'OPENING') {
+        tr.openT += dt;
+        if (tr.openT >= TREASURE_OPEN_TIME) {
+          tr.openT = TREASURE_OPEN_TIME;
+          tr.state = 'OPEN';
+          if (MG.Enemy && MG.Enemy.spawnParticles) {
+            MG.Enemy.spawnParticles(tr.x, tr.y - 10, 14, 0, -1, 'reward');
+          }
+          if (MG.UI && MG.UI.showToast) MG.UI.showToast('달빛 조각을 획득했다!');
+        }
+        return;
+      }
+
+      // 이미 열었으면 끝이다 — 다시 열리지 않는다
+      if (tr.state !== 'CLOSED') { this.hideTreasurePrompt(); return; }
+
+      // 다리가 놓이기 전에는 상자에 대한 버튼도 E 도 전혀 반응하지 않는다
+      if (!this.bridgeActivated) {
+        this._treasureInRange = false;
+        this.hideTreasurePrompt();
+        return;
+      }
+
+      var p = MG.Player;
+      if (!p || p.state === 'DEAD') {
+        this._treasureInRange = false;
+        this.hideTreasurePrompt();
+        return;
+      }
+
+      var dx = p.x - tr.x, dy = p.y - tr.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (!this._treasureInRange && dist <= TREASURE_ENTER) this._treasureInRange = true;
+      else if (this._treasureInRange && dist > TREASURE_LEAVE) this._treasureInRange = false;
+
+      if (this._treasureInRange) this.showTreasurePrompt();
+      else this.hideTreasurePrompt();
+
+      if (this._treasureInRange && MG.Input && MG.Input.interactPressed) {
+        this.openTreasure();
+      }
+    },
+
+    /* 상자를 연다. 멱등이다 — CLOSED 가 아니면 아무 일도 하지 않는다. */
+    openTreasure: function () {
+      var tr = MG.Map && MG.Map.treasure;
+      if (!tr || tr.state !== 'CLOSED') return;
+
+      tr.state = 'OPENING';
+      tr.openT = 0;
+      this.hideTreasurePrompt();          // 버튼은 즉시 사라진다
+
+      if (MG.Audio && MG.Audio.playTreasureOpen) MG.Audio.playTreasureOpen();
+      if (MG.Enemy && MG.Enemy.spawnParticles) {
+        MG.Enemy.spawnParticles(tr.x, tr.y - 12, 8, 0, -1, 'reward');
+      }
+    },
+
+    showTreasurePrompt: function () {
+      if (this._treasurePromptShown) return;
+      this._treasurePromptShown = true;
+      if (MG.UI && MG.UI.showInteract) MG.UI.showInteract();
+    },
+
+    hideTreasurePrompt: function () {
+      if (!this._treasurePromptShown) return;
+      this._treasurePromptShown = false;
+      if (MG.UI && MG.UI.hideInteract) MG.UI.hideInteract();
+    },
+
     /* PHASE 8.1-B: 정화 시작. 게임을 멈추지 않고(컷신 없음) 아주 짧은
        히트스탑만 걸어 "쿵" 하는 무게를 준다 — 기존 hitStop() 은 dt 배율만
        낮출 뿐 입력을 막지 않으므로 조작권은 계속 플레이어에게 있다. */
@@ -387,6 +494,16 @@
       this.cleanse = null;
       this.atmosphere = 0;
       this.moonstoneFound = false;
+      this.bridgeActivated = false;   // PHASE 10 STEP 1: 재시작이면 다리도 처음 상태로
+      if (MG.Map && MG.Map.resetBridge) MG.Map.resetBridge();  // 강이 다시 완전히 막힌다
+      // PHASE 10 STEP 3: 상자도 다시 닫힌다 (새 세션에서 다시 열 수 있어야 한다).
+      // 저장 상태를 새로 만들지 않는다 — 이번 세션 동안만 유지되는 값이다.
+      if (MG.Map && MG.Map.treasure) {
+        MG.Map.treasure.state = 'CLOSED';
+        MG.Map.treasure.openT = 0;
+      }
+      this._treasureInRange = false;
+      this._treasurePromptShown = false;
       this.hitStopT = 0;
 
       // 2) 달의 돌을 다시 잠들게 한다
@@ -400,6 +517,9 @@
       //     Enemy.init 이 9마리를 원래 스폰 지점에 다시 배치한다)
       if (MG.Player && MG.Player.init) MG.Player.init();
       if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();
+      // PHASE 9 STEP 3: 모스키도 기존 init() 을 그대로 재사용해 다시 묶인다
+      // (TRAPPED / recruited=false / 300,235). 새 저장 상태를 만들지 않는다.
+      if (MG.Companion && MG.Companion.init) MG.Companion.init();
       if (MG.Enemy && MG.Enemy.particles) MG.Enemy.particles.length = 0;
 
       // 4) 문구를 누르느라 눌려 있던 입력이 남지 않도록 정리한다
@@ -481,10 +601,14 @@
 
       MG.Map.renderGround(ctx);
       MG.Map.renderWater(ctx, cam, t);
+      // PHASE 10 STEP 2: 다리는 물 바로 위, 엔티티보다 아래에 깔린다.
+      // (올라서는 바닥이므로 루카/모스키를 가려서는 안 된다)
+      if (MG.Map.renderBridge) MG.Map.renderBridge(ctx, cam, t);
 
       // 나무/바위/모슬링/플레이어를 발 높이(y) 순으로 그려 앞뒤 관계를 만든다
       var props = MG.Map.collectProps([], cam);
       if (MG.Enemy && MG.Enemy.collect) MG.Enemy.collect(props, cam);
+      if (MG.Companion && MG.Companion.collect) MG.Companion.collect(props, cam);  // PHASE 9 STEP 2
       if (MG.Player) {
         props.push({ y: MG.Player.y, kind: 'player' });
       }
@@ -495,6 +619,8 @@
           if (MG.Player.render) MG.Player.render(ctx);
         } else if (props[i].kind === 'enemy') {
           MG.Enemy.renderOne(ctx, props[i].obj);
+        } else if (props[i].kind === 'companion') {
+          MG.Companion.renderOne(ctx, props[i].obj);   // PHASE 9 STEP 2
         } else {
           MG.Map.renderProp(ctx, props[i]);
         }

@@ -16,9 +16,10 @@
       if (MG.Map && MG.Map.init) MG.Map.init();       // 지형 / 충돌 (Player 보다 먼저)
       if (MG.Player && MG.Player.init) MG.Player.init();
       if (MG.Enemy && MG.Enemy.init) MG.Enemy.init();  // 모슬링 배치 (맵 충돌 데이터 필요 — Map 이후)
+      if (MG.Companion && MG.Companion.init) MG.Companion.init();  // PHASE 9 STEP 2: 모스키(갇힌 상태)
       MG.UI.init();                     // 오버레이 / 방향 경고 (Game 이후에 초기화)
 
-      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 9.3');
+      console.log('[달빛 숲의 수호자] Prototype v' + MG.Game.VERSION + ' — PHASE 9 STEP 4');
     } catch (err) {
       console.error('[MG] 초기화 실패:', err);
     }
