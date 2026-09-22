@@ -275,6 +275,258 @@ html, body {
   background: #05080a;
 }
 
+/* --------------------------------------------------------------------------
+   PHASE 11 STEP 2: 프로토타입 완료 화면.
+   타이틀과 같은 .overlay 를 쓰되 z-index 만 올린다 — 기존 HUD 가운데 가장 높은
+   것이 토스트(20)이므로 50 이면 하트/문구/버튼 어느 것과도 겹쳐 보이지 않는다.
+   배경은 기존 화면을 그대로 두고 어두운 반투명만 덧씌운다(.overlay 의 기본
+   radial-gradient 보다 조금 더 짙게 해 글자가 확실히 읽히게 한다).
+   pointer-events 는 .overlay 에서 이미 auto 라, 아래에 깔린 공격/상호작용/능력
+   버튼이 눌리지 않는다.
+   -------------------------------------------------------------------------- */
+
+.overlay-complete {
+  z-index: 50;
+  background: radial-gradient(120% 90% at 50% 45%,
+              rgba(10, 26, 20, 0.86) 0%, rgba(2, 5, 4, 0.97) 100%);
+  opacity: 0;
+  transition: opacity 900ms ease;
+
+  /* PHASE 12 STEP 1: 피드백 폼이 붙어 화면이 길어졌다. 짧은 화면(특히 가로
+     812x375 의 무대는 높이 375px 뿐이다)에서 잘리지 않도록 넘치면 스크롤한다.
+     align-items:center 인 채로 넘치면 위쪽이 잘려 닿을 수 없게 되므로,
+     flex-start + margin:auto 조합을 쓴다 — 공간이 남으면 가운데, 모자라면
+     위에서부터 스크롤된다.
+     body 가 touch-action:none 이라 모바일에서 스크롤이 막히므로 여기서 푼다. */
+  align-items: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 3vmin 0;
+}
+.overlay-complete .overlay-inner { margin: auto; }
+.overlay-complete.is-visible { opacity: 1; }
+
+.complete-eyebrow {
+  margin: 0;
+  font-size: clamp(11px, 2.2vh, 17px);
+  letter-spacing: 0.26em;
+  color: var(--mg-leaf);
+  text-transform: none;
+}
+
+/* 기획서 2장의 문장. 한국어 어절이 중간에서 끊기지 않게 keep-all 을 쓴다
+   (토스트에서 이미 같은 이유로 쓰고 있다). */
+.complete-line {
+  margin: 0.9em 0 0;
+  font-family: var(--mg-font-display);
+  font-size: clamp(20px, 4.4vh, 38px);
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  color: var(--mg-moon);
+  text-shadow: 0 0 22px rgba(150, 200, 255, 0.4),
+               0 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* 이번 판에서 실제로 이룬 세 가지 — 완료 조건 그대로다(지어낸 보상이 아니다). */
+.complete-list {
+  margin: 1.6em 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5em 1.1em;
+  font-size: clamp(12px, 2.4vh, 18px);
+  letter-spacing: 0.1em;
+  color: var(--mg-ink-dim);
+}
+.complete-list li::before {
+  content: "✦ ";
+  color: var(--mg-moon);
+  opacity: 0.8;
+}
+
+/* --------------------------------------------------------------------------
+   PHASE 12 STEP 1: 완료 화면의 피드백 입력.
+   기존 토큰(--mg-moon / --mg-leaf / --mg-panel)만 써서 밤 숲 분위기를 유지한다.
+   탭 타깃은 모두 44px 이상으로 잡는다.
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   PHASE 12 ROOT-CAUSE FIX: 독립 피드백 화면 (#game-root 의 형제).
+
+   왜 게임 안에 두지 않는가:
+     html/body 가 overflow:hidden + touch-action:none 이고 #game-root 는
+     position:fixed 다. 안드로이드 Chrome 은 포커스된 입력을 "문서를 스크롤해서"
+     화면에 넣는데, 스크롤할 문서가 없으니 그 처리가 아예 일어날 수 없었다.
+     그래서 여기는 position:relative — 평범한 문서 흐름 — 로 두고, 열려 있는
+     동안에만 body 의 스크롤을 풀어준다. 그러면 키보드 대응은 브라우저가
+     알아서 한다(우리 코드에 키보드 관련 계산이 한 줄도 없는 이유다).
+   -------------------------------------------------------------------------- */
+
+#feedback-screen {
+  position: relative;      /* fixed 가 아니다 — 문서와 함께 스크롤되어야 한다 */
+  z-index: 200;            /* 고정된 #game-root 위에 덮인다 */
+  min-height: 100dvh;
+  padding: 7vh 5vw calc(7vh + env(safe-area-inset-bottom));
+  background: radial-gradient(120% 80% at 50% 25%,
+              #0e2018 0%, #05080a 100%);
+  color: var(--mg-ink);
+  text-align: center;
+}
+#feedback-screen[hidden] { display: none; }
+
+/* 피드백 화면이 열려 있는 동안에만 문서 스크롤/터치 스크롤을 허용한다.
+   닫으면 게임용 설정(스크롤 없음)으로 정확히 돌아간다. */
+body.mg-feedback {
+  overflow-y: auto;
+  touch-action: auto;
+  overscroll-behavior: auto;
+}
+
+.feedback-inner {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.feedback-title {
+  margin: 0 0 1.8em;
+  font-family: var(--mg-font-display);
+  font-size: clamp(18px, 3.4vh, 28px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--mg-moon);
+  text-shadow: 0 0 18px rgba(150, 200, 255, 0.35);
+}
+
+.feedback-label {
+  margin: 1.6em 0 0.7em;
+  font-size: clamp(12px, 2.3vh, 17px);
+  letter-spacing: 0.08em;
+  color: var(--mg-ink-dim);
+}
+.feedback-label:first-of-type { margin-top: 0; }
+
+.rating-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.5em;
+}
+.rating-btn {
+  width: 44px;
+  height: 44px;
+  font-family: inherit;
+  font-size: clamp(13px, 2.4vh, 18px);
+  font-weight: 700;
+  color: var(--mg-ink-dim);
+  background: var(--mg-panel);
+  border: 1px solid rgba(207, 228, 255, 0.28);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 90ms ease, filter 90ms ease,
+              border-color 90ms ease, color 90ms ease;
+}
+.rating-btn:active { transform: translateY(2px); }
+.rating-btn.is-selected {
+  color: #0b1410;
+  background: linear-gradient(180deg, var(--mg-moon) 0%, #9dc4ef 100%);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.feedback-text {
+  display: block;
+  width: 100%;
+  margin-top: 1em;
+  padding: 0.7em 0.8em;
+  font-family: inherit;
+  font-size: clamp(12px, 2.2vh, 16px);
+  line-height: 1.5;
+  color: var(--mg-ink);
+  background: rgba(8, 18, 14, 0.75);
+  border: 1px solid rgba(207, 228, 255, 0.28);
+  border-radius: 8px;
+  resize: none;
+  -webkit-user-select: text;
+  user-select: text;          /* body 에서 선택을 막아두었으므로 여기서 되살린다 */
+  touch-action: auto;         /* 입력 중 스크롤/캐럿 이동이 막히지 않게 */
+}
+.feedback-text::placeholder { color: rgba(159, 179, 154, 0.7); }
+.feedback-text:focus {
+  outline: none;
+  border-color: rgba(207, 228, 255, 0.6);
+}
+
+/* 제출은 보조 동작이라 "다시 모험하기"(.ui-button, 초록 채움)보다 조용하게 둔다 */
+.feedback-submit {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 0.9em;
+  padding: 0.6em 1em;
+  font-family: inherit;
+  font-size: clamp(13px, 2.4vh, 18px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--mg-moon);
+  background: transparent;
+  border: 1px solid rgba(207, 228, 255, 0.45);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 90ms ease, background 90ms ease;
+}
+.feedback-submit:active {
+  transform: translateY(2px);
+  background: rgba(207, 228, 255, 0.12);
+}
+
+.feedback-status {
+  margin: 1.6em 0 0;
+  font-size: clamp(12px, 2.2vh, 16px);
+  letter-spacing: 0.06em;
+  color: var(--mg-leaf);
+}
+.feedback-status[hidden] { display: none; }
+
+/* 완료 화면으로 돌아가는 버튼 — 조용한 보조 동작 */
+.feedback-back {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 2.2em;
+  padding: 0.6em 1em;
+  font-family: inherit;
+  font-size: clamp(12px, 2.2vh, 16px);
+  letter-spacing: 0.08em;
+  color: var(--mg-ink-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.complete-footer {
+  margin: 1.8em 0 0;
+  font-size: clamp(10px, 1.9vh, 14px);
+  letter-spacing: 0.18em;
+  color: var(--mg-ink-dim);
+  opacity: 0.7;
+}
+
+/* 완료 화면이 떠 있는 동안에는 조작 컨트롤을 감춘다 — 타이틀 화면에서 쓰는
+   body 클래스 게이팅과 똑같은 방식이다(새 입력 계층을 만들지 않는다). */
+body.mg-complete #joystick-zone,
+body.mg-complete .joystick-base,
+body.mg-complete .attack-button,
+body.mg-complete .interact-button,
+body.mg-complete .ability-button {
+  display: none;
+}
+
 .overlay-inner {
   padding: 4vmin 6vmin;
   max-width: 90%;

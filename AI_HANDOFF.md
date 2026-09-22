@@ -12,7 +12,135 @@ v0.1.11
 
 Current Phase:
 
-Phase 10 (VINE BRIDGE) — **STEP 3 COMPLETE** — 보물 상자까지 열린다
+Phase 12 (FEEDBACK) — **STEP 1 COMPLETE (+ 모바일 키보드 수정 2차)**
+폼 + LocalStorage. 실기 Android 테스트/영상 피드백을 두 차례 반영했다.
+
+현재 키보드 대응 방식 (FIX 2 — 이것이 최종):
+* **무대도 #game-root 도 건드리지 않는다.** 완료 오버레이의 `bottom` 만 키보드
+  높이만큼 키워서 아래쪽을 잘라내고, 짧아진 만큼은 오버레이 자신의
+  `overflow-y:auto` 가 내부 스크롤로 감당한다. 위쪽이 제자리에 붙어 있으므로
+  완료 문구가 튀어오르지 않는다.
+* `scrollIntoView` 는 `block:'nearest'`, 기본(즉시) 동작으로 **한 번만**.
+  이미 보이면 아무 일도 하지 않는다.
+* viewport meta 의 `interactive-widget` 은 **도로 뺐다**.
+
+**build.sh 에 대한 중요한 사실:** `artifact.html` 에는 viewport meta 가 아예
+들어가지 않는다(Artifact 호스트가 자체 head 를 씌운다). 그리고 `dist/index.html`
+용 meta 는 build.sh 48행이 **하드코딩**한다 — `index.html` 의 meta 는 복사되지
+않는다. 그래서 폰에서 아티팩트로 테스트할 때 meta 변경은 아무 영향이 없다.
+meta 로 뭔가를 고치려 한다면 build.sh 도 같이 고쳐야 한다.
+
+Fix (실기 피드백 반영):
+
+* **증상** — 완료 화면의 textarea 를 누르면 소프트 키보드가 입력창과 제출
+  버튼을 덮었다.
+* **원인** — 크기가 아니라 *위치* 문제였다. `Game.resize()` 는 이미
+  `visualViewport` 를 보고 무대를 올바르게 줄이고 있었지만, `#game-root` 가
+  `position: fixed; inset: 0` 이라 여전히 레이아웃 뷰포트(키보드에 줄지 않는
+  812px) 전체를 차지한다. 줄어든 무대를 그 812px 한가운데에 앉히니 무대
+  아래쪽 —입력창과 제출 버튼이 있는 부분— 이 키보드 뒤로 들어갔다.
+* **고친 방법 (3가지, 모두 최소)**
+  1. viewport meta 에 `interactive-widget=resizes-content` 추가. 키보드가
+     레이아웃 뷰포트까지 줄이게 하는 표준 방법이며, 이것만으로 `#game-root`
+     와 `100dvh` 가 키보드 위 영역에 맞춰지고 기존 리사이즈 로직이 그대로
+     무대를 앉힌다. (Chrome Android 108+)
+  2. `interactive-widget` 미지원 브라우저(iOS Safari 등)용 폴백 —
+     `Feedback.syncKeyboardInset()` 이 입력 중일 때만 `#game-root` 를
+     visualViewport 에 직접 맞춘다. 지원 브라우저에서는 `innerHeight` 도 같이
+     줄어 gap 이 0 이므로 **저절로 아무 일도 하지 않는다**(이중 보정 없음).
+  3. focus 시 `scrollIntoView({block:'center'})` 로 입력창을 보이는 영역
+     가운데로 올린다. 완료 화면이 이미 스크롤 컨테이너라 새 구조가 필요 없었다.
+* 저장 구조(`moonlit-grove-feedback`, `{rating, comment}` 배열)와 완료 화면
+  게임 로직, `restartSession()` 은 **하나도 바뀌지 않았다.**
+
+Implemented (Phase 12 Step 1):
+Step 1 = input UI on the completion screen and LocalStorage persistence.
+**No JSON export, no download, no admin view, no server/API** — later.
+
+Implemented (Phase 12 Step 1):
+
+* **`js/feedback.js` is no longer a stub.** `MG.Feedback` now has
+  `init()` / `setRating()` / `submit()` / `save()` / `load()` / `resetForm()`.
+* **Two fields only**: `rating` (1-5, or `null` if not chosen) and `comment`
+  (free text, may be empty). **The design doc defines no feedback items** —
+  see the changelog note — so these two were chosen by the user rather than
+  invented, and nothing else was added. No timestamp, no version, no id:
+  the record is exactly `{rating, comment}`.
+* **Key `moonlit-grove-feedback`, value is an array, appended to.** There was
+  no pre-existing key anywhere in the codebase and the doc names none. Records
+  accumulate because "친구 피드백" implies more than one friend — overwriting
+  would let the second playtester erase the first.
+* **No required fields**, because the doc defines none. Submitting with nothing
+  filled in is allowed and stores `{rating: null, comment: ""}`.
+* **One submission per session**, and `UI.hideComplete()` resets the form for
+  the next run — so `restartSession()` itself was not touched. Stored records
+  are never cleared by restarting.
+* **Storage failure degrades quietly**: everything is in try/catch, `save()`
+  returns false, and the status line says so instead of throwing.
+
+Previously: Phase 11 (PROTOTYPE COMPLETION) — **STEP 3 COMPLETE** — 루프가 닫혔다
+Step 1 = detection. Step 2 = the completion screen. Step 3 = the way out.
+No feedback system, no LocalStorage, no JSON export, no inventory —
+those are Phase 12.
+
+Implemented (Phase 11 Step 3) — one button, one listener, zero new logic:
+
+* **`#btn-complete-restart` ("다시 모험하기")** inside `#overlay-complete`,
+  using the title screen's `.ui-button` class verbatim — so **no CSS was
+  written at all** for this step. It sits where the title screen puts its
+  button (문구 → 버튼 → 버전).
+* **The click handler is the third copy of a pattern already used twice**
+  (`#btn-start`, `#hud-restart`): one `click` listener, `preventDefault()`,
+  `Audio.unlock()`, then the existing call. No pointer/key input was added.
+* **It calls `MG.Game.restartSession()` and nothing else.** Hiding the screen,
+  removing `body.mg-complete`, resetting treasure/bridge/Moski/player and
+  unfreezing gameplay were all already inside `restartSession()` from Steps
+  1-2 — no initialisation code was duplicated.
+* **Double-click guard:** the handler returns early unless
+  `MG.Game.gameComplete` is true. The first click clears it, so every
+  subsequent click is a no-op.
+
+Implemented (Phase 11 Step 2) — a display layer and nothing else:
+
+* **`#overlay-complete`** reuses the title screen's `.overlay` /
+  `.overlay-inner` markup and flex centring. `z-index: 50` puts it above every
+  HUD layer (the highest was the toast at 20), so nothing shows through.
+* **The wording comes from GAME_DESIGN.md.** The doc has *no* completion-screen
+  spec, so the screen quotes the line ch.2 ("핵심 게임 경험") names as the final
+  emotion of this exact loop: **"드디어 저곳에 도착했다."** The three items listed
+  under it (모스키 / 덩굴 다리 / 달빛 조각) are the completion conditions
+  themselves, not invented rewards.
+* **`MG.UI.showComplete()` / `hideComplete()` / `isCompleteVisible()`** — pure
+  visibility, same shape as the existing title/victory helpers. `showComplete()`
+  calls `hideToast()` first so the reward toast is never left half-covered
+  (the restart prompt already does this, PHASE 9.1).
+* **A 1.6s beat before it appears.** Opening the chest fires the lid animation,
+  particles and the "달빛 조각을 획득했다!" toast all at once; covering that
+  instantly would hide the reward the player just earned. Measured: screen
+  appears at 1.62s.
+* **Gameplay freezes once the screen is up** — `Game.update()` returns early
+  (keeping `updateCamera()`), so there is no further progression and the
+  completion event cannot fire twice. Rendering continues, so the forest stays
+  as the backdrop. `body.mg-complete` hides the touch controls through the same
+  class-gating rule the title screen uses.
+
+Implemented (Phase 11 Step 1) — one latch and two functions, all in game.js:
+
+* **`MG.Game.gameComplete`** — a derived latch, not a fourth progress state.
+  It is computed from the three that already existed:
+  `MG.Companion.recruited`, `MG.Game.bridgeActivated`,
+  `MG.Map.treasure.state === 'OPEN'`.
+* **`MG.Game.isPrototypeComplete()`** — pure read of those three, changes
+  nothing, safe to call any number of times.
+* **`MG.Game.checkPrototypeComplete()`** — evaluates and latches. Once true it
+  returns true without re-evaluating, so the completion cannot be undone.
+* **One call site**: inside `updateTreasure()`, immediately after the chest
+  becomes `'OPEN'` (right after the existing particles + toast). Nothing else
+  in the game calls it.
+* `restartSession()` clears it; death/respawn does not touch it — same
+  lifetime rule as `moonstoneFound` / `cleansed` / `bridgeActivated`.
+
+Previously: Phase 10 (VINE BRIDGE) — **STEP 3 COMPLETE** — 보물 상자까지 열린다
 Step 1 = environment. Step 2 = ability + bridge + collision.
 Step 3 = treasure chest interaction + reward state.
 The completion screen is NOT implemented (that remains Phase 11).
@@ -1104,8 +1232,35 @@ AI-assisted development workflow
 
 Current task:
 
-Phase 10 Step 3 (treasure chest) — done, stable, still v0.1.11. Not
-committed to git.
+Phase 12 Step 1 (feedback form + LocalStorage) — done, stable, v0.1.11.
+
+**Read the stored feedback with** `MG.Feedback.load()` in the console — it
+returns the array. That is the whole "read it back" path for now; turning it
+into a file is Phase 12's next step.
+
+Previously: Phase 11 Step 3 (restart from the completion screen) — done.
+
+**The prototype loop is now closed end to end and replayable without a
+reload:** 달의 돌 → 정화 → 모스키 영입 → 추종 → 덩굴 다리 → 도강 →
+보물 상자 → 완료 화면 → 다시 모험하기 → 처음부터.
+
+What is left of the original plan: **Phase 12** (feedback form / LocalStorage /
+JSON export — `feedback.js` is still the only TODO stub in the codebase), and
+the long-term expansions in GAME_DESIGN.md ch.12-13.
+
+Previously: Phase 11 Step 1 (completion detection) — done, stable, v0.1.11.
+
+**Git note:** the whole Phase 9 + Phase 10 body of work was committed by the
+user on 2026-09-22 as `c6bbae4 feat: complete companion and vine bridge
+prototype loop` (13 files, +5383). Phase 11 Step 1 (`js/game.js`, +41/-0) is
+the only uncommitted change as of this writing.
+
+**For Phase 11 Step 2 (completion screen):** read `MG.Game.gameComplete`, or
+call `MG.Game.isPrototypeComplete()` if you want the live condition rather
+than the latch. Do not add a fourth state — the latch already flips at exactly
+the right moment and survives death/respawn.
+
+Previously: Phase 10 Step 3 (treasure chest) — done, stable, still v0.1.11.
 
 **The whole prototype arc now plays end to end:** 달의 돌 → 정화 →
 모스키 발견 → 영입 → 추종 → 강둑 → 덩굴 다리 → 도강 → 보물 상자 →
@@ -1172,6 +1327,270 @@ quiet is the safe direction, and this is an aesthetic call that needs a real
 phone speaker to judge. If it turns out to be inaudible on device, raise
 `AMBIENT.forest.windGain` to ~0.06 (and `cleansed` to ~0.045) to land inside
 the stated band. That is a two-number change in `js/audio.js`.
+
+### Phase 12 STEP 1 FIX 2 — 키보드 UX 최종 (버전 유지: v0.1.11)
+
+실기 영상에서 나온 증상: 키보드가 오르면 화면 전체가 크게 움직이고, 한 박자
+늦게 더 스크롤되면서 "드디어 저곳에 도착했다." 와 완료 정보가 밖으로 밀려남.
+
+**원인은 전부 1차 수정에서 내가 넣은 것들이었다.**
+
+1. `syncKeyboardInset()` 이 `#game-root` 의 top/height 를 바꾸고 `Game.resize()`
+   를 불렀다. 무대는 9:16 비율 고정이라 높이가 줄면 **폭까지 같이 줄어든다**
+   (375x667 -> 264x470). 입력창은 보였지만 게임 화면 전체가 축소·재배치되는
+   것이 "화면이 위아래로 크게 이동한다" 의 정체였다.
+2. `scrollIntoView({block:'center', behavior:'smooth'})` 를 200ms·450ms 에 **두
+   번** 불렀다. center 는 입력창을 한가운데로 끌어오므로 위쪽 내용이 그만큼
+   밖으로 밀리고, smooth 두 번이 겹쳐 "시간이 지나면서 더 스크롤된다" 로 보였다.
+3. viewport meta 의 `interactive-widget=resizes-content` 도 같은 무대 축소를
+   일으킨다 — 다만 **아티팩트에는 이 meta 가 들어가지 않으므로** 실기 영상의
+   원인은 1번과 2번이었다(아래 build.sh 항목 참고).
+
+**고친 방식:** 무대를 손대지 않고 오버레이만 잘라낸다. 오버레이는
+`position:absolute; inset:0` 이므로 `bottom` 만 키우면 위는 고정된 채 아래만
+짧아진다. 375x812 에서 키보드 342px 기준으로 계산하면 무대 아래끝 739.5 −
+보이는 끝 470 = **270px** 이 정확히 잘려나가고, 남은 397px 안에서 내부 스크롤로
+rating → textarea → 피드백 보내기 까지 닿는다. 오버레이가 지나치게 납작해지지
+않도록 최소 120px 는 남긴다.
+
+**build.sh 관련 발견:** `artifact.html` 에는 viewport meta 가 전혀 없고
+(Artifact 호스트가 head 를 제공), `dist/index.html` 의 meta 는 build.sh 48행에
+하드코딩되어 있어 `index.html` 을 고쳐도 반영되지 않는다. meta 로 모바일 동작을
+바꾸려면 세 곳(index.html / build.sh / 아티팩트 한계)을 함께 봐야 한다.
+
+검증(하네스, 무대 375x667 이 812 화면 중앙에 있다고 가정): 키보드 470px 기준
+오버레이 `bottom:270px` 정확히 적용, `#game-root` 와 무대는 **스타일이 전혀
+붙지 않음**; `scrollIntoView` 는 `block:'nearest'` 로 1회; 키보드를 내리면
+`bottom` 이 깨끗이 제거됨; 극단적으로 낮은 뷰포트(150px)에서도 오버레이 높이
+120px 확보; `UI.hideComplete()`(재시작 경로)에서도 반드시 해제; 저장 레코드는
+여전히 `{rating, comment}` 두 필드에 키도 동일; 게임 이동 42px 정상이고
+오버레이·루트에 잔여 스타일 없음.
+
+**실기 재확인 필요.** 브라우저 패널이 이 세션 내내 렌더링하지 못해(Claude 창
+최소화/숨김) 키보드가 실제로 올라온 화면은 여전히 보지 못했다. 이 문제는 실기
+영상에서만 드러났으므로 같은 기기에서의 재확인이 유일한 진짜 검증이다.
+
+### Phase 12 STEP 1 FIX — 모바일 소프트 키보드 가림 (버전 유지: v0.1.11)
+
+실기 Android 테스트에서 나온 문제. **크기가 아니라 위치 문제였다는 점이 핵심.**
+
+`Game.resize()` 는 `viewportSize()` 안에서 이미 `visualViewport.height` 를 함께
+보고 있어서, 키보드가 올라오면 무대를 제대로 작게 만든다. 문제는 그 다음이다:
+`#game-root` 가 `position: fixed; inset: 0` 이라 **레이아웃** 뷰포트 전체를
+차지하는데, 안드로이드 기본값(`resizes-visual`)에서는 키보드가 레이아웃
+뷰포트를 줄이지 않는다. 그래서 470px 짜리 무대가 812px 박스 한가운데,
+즉 y≈171~641 에 놓이고 키보드는 y≈470 부터 덮는다 — 무대 아래 171px,
+정확히 입력창과 제출 버튼이 있는 부분이 가려진다.
+
+그래서 고칠 곳은 스크롤이나 textarea 위치가 아니라 **컨테이너가 어느 뷰포트를
+기준으로 삼는가** 였다. `interactive-widget=resizes-content` 한 줄이 그 기준을
+바꿔주고, 나머지(무대 재배치, 오버레이 스크롤)는 이미 있던 코드가 한다.
+
+폴백을 따로 둔 이유는 iOS Safari 가 아직 `interactive-widget` 을 모르기
+때문이다. 두 방식이 겹쳐 이중으로 보정하지 않는다는 것을 실제로 확인했다 —
+지원 브라우저에서는 `innerHeight - visualViewport.height` 가 0 이 되어 폴백의
+조건(`gap > 80`)이 성립하지 않는다.
+
+검증(하네스): 미지원 시나리오에서 focus + visualViewport 470px → `#game-root`
+가 `height:470px; top:0px` 로 고정되고, blur 후 원래대로 복귀; 지원 시나리오
+(innerHeight 도 470) 에서는 폴백이 스타일을 전혀 건드리지 않음;
+`scrollIntoView` 가 `block:'center'` 로 1회 호출; 키보드가 올라간 상태에서
+`UI.hideComplete()`(= restartSession 경로)를 타도 보정이 반드시 해제됨;
+저장 레코드는 여전히 `{rating, comment}` 필드 둘뿐이고 키도 동일; 점수 버튼
+동작 유지; 게임 이동 42px 정상이며 `#game-root` 에 잔여 스타일 없음.
+
+**여전히 실기 확인 필요.** 브라우저 패널이 이 세션 내내 렌더링하지 못해
+(Claude 창 최소화/숨김) 실제 키보드가 올라온 화면은 보지 못했다. 이 수정은
+실기에서 나온 문제이므로 **같은 기기에서 재확인하는 것이 유일한 진짜 검증**이다.
+
+### Phase 12 STEP 1 — 피드백 폼 + LocalStorage (버전 유지: v0.1.11)
+
+**The design doc does not specify a feedback system.** Searching all 409 lines
+of GAME_DESIGN.md for 피드백/설문/평가/저장 returns exactly one hit, and it is a
+development principle rather than a feature spec:
+
+> 14. 개발 원칙 — 9. 친구 피드백을 적극적으로 반영한다.
+
+There is no Phase 12 section, no evaluation items, no questions, no storage key,
+no data shape, no overwrite-vs-append rule and no required-field rule. The only
+other signal was `feedback.js`'s own header naming the three pieces ("피드백 폼 /
+LocalStorage / JSON 내보내기"), which is how the step boundary was drawn.
+
+Because the task forbade inventing evaluation items, the form's contents were
+**asked rather than assumed**; the user chose 재미 점수 1~5 + 자유 의견. Every
+remaining undefined decision is recorded here so the next person knows these
+were judgement calls, not requirements:
+
+* key `moonlit-grove-feedback` (project name — no key existed, none specified)
+* array, appended (a second friend must not erase the first)
+* record is `{rating, comment}` and nothing else (the task forbade adding
+  fields like 날짜/시간 that the doc does not mention)
+* no required fields (the doc defines none, so none were invented)
+
+**Why the form resets in `UI.hideComplete()` rather than `restartSession()`.**
+The step forbade changing `restartSession()`'s structure. `hideComplete()` is
+already called by it and is the natural owner of "the overlay's contents go
+back to their initial state when it is put away" — so `game.js` needed no
+change at all this step.
+
+**A layout note.** The completion screen is now much taller. `.overlay-complete`
+gained `overflow-y: auto` with `align-items: flex-start` + `margin: auto` on the
+inner block — with `align-items: center` an overflowing panel has its top cut
+off and unreachable. `touch-action: pan-y` is needed too, because `body` sets
+`touch-action: none` for the game.
+
+Verified by harness: form appears with the completion screen; submitting stores
+exactly `[{"rating":4,"comment":"..."}]` with fields `comment,rating` only;
+repeat submits add nothing; the raw string survives and re-parses (the
+"refresh" check); empty submission is accepted and stores
+`{rating:null, comment:""}`; a second submission appends and keeps the first;
+re-clicking a score deselects it; with `localStorage` throwing, `submit()`
+returns false without throwing and the status line explains. After
+다시 모험하기: game fully reset (treasure CLOSED, Moski TRAPPED, bridge off,
+river one solid, HP 5, 9 Mosslings) while the stored feedback survives and the
+form is blank again. Regression: movement 42/-42, sword 3→2, Mossling CHASE +
+damage, Moonstone → cleansing unchanged. Console clean across four loads, with
+no `[MG] 초기화 실패` — confirming `Feedback.init()` runs in the real browser.
+Bundle contains no `.download`, `Blob`, `createObjectURL`, `fetch`,
+`XMLHttpRequest` or `sendBeacon` (the `JSON.stringify` present is LocalStorage
+serialisation, not file export).
+
+**Still unseen.** Third step running with the browser pane unable to render
+(Claude's window minimized/hidden), so the form's appearance, spacing and tap
+targets on 375×812 and desktop were reasoned, not observed. This one is the
+most worth checking on a device, since it is the first screen with a text
+input.
+
+### Phase 11 STEP 3 — 완료 화면의 "다시 모험하기" (버전 유지: v0.1.11)
+
+The smallest step in the project so far: **`index.html` +6, `js/ui.js` +19,
+and no CSS whatsoever.** The button reuses `.ui-button` (the title screen's
+"모험 시작"), which already carries `min-height: 48px` and the pressed state,
+so there was nothing to style.
+
+**Nothing was re-initialised.** The handler's entire body is a guard, an
+`Audio.unlock()` and `MG.Game.restartSession()`. Everything the spec listed as
+required after the click — screen hidden, `body.mg-complete` removed, treasure
+CLOSED, bridge off, Moski TRAPPED, `gameComplete` false, player controllable —
+was already inside `restartSession()` from Steps 1 and 2. Adding any of it
+again would have created a second source of truth for the reset.
+
+**The guard is worth keeping.** `if (!MG.Game.gameComplete) return;` looks
+redundant because hiding the overlay already stops further clicks. But a
+harness run with two listeners deliberately attached to the same button (a
+double `UI.init()`) still produced exactly **one** `restartSession()` call —
+the guard, not the DOM, is what makes that safe. In the real boot path there is
+exactly one listener, verified.
+
+Verified: completion screen up → click → `gameComplete` false, overlay hidden,
+`mg-complete` removed, treasure CLOSED/openT 0, bridge false with the river
+back to a single solid, Moski TRAPPED and unrecruited, HP 5 at (200,590), 9
+Mosslings, `state` PLAY — and the player moves again (42px), so the Step 2
+freeze releases. Five rapid clicks → `restartSession()` called once. Clicking
+while not complete does nothing. A full second playthrough (영입 → 다리 →
+상자 → 완료 화면 → 다시 모험하기) behaves identically to the first. Regression:
+movement 42/-42, sword 3→2, Mossling CHASE + damage, respawn HP 5/5 at
+(200,590), Moonstone → cleansing (atmosphere 1, all dissolved). Console clean
+across three loads. No new key input (KeyE/KeyQ/Space counts unchanged), no
+localStorage, no JSON export, `feedback.js` untouched.
+
+**Still unseen.** As in Step 2, the browser pane would not render this session
+(the tool reports Claude's window as minimized/hidden), so the button's
+appearance, spacing and tap size on 375×812 and desktop were not observed —
+only reasoned from the `.ui-button` class the title screen already uses. Worth
+a glance on a real phone.
+
+### Phase 11 STEP 2 — 프로토타입 완료 화면 (버전 유지: v0.1.11)
+
+**The design doc has no completion screen.** Searching GAME_DESIGN.md for
+완료/보상/엔딩 turns up nothing describing one — the arc simply ends at
+"보물 획득" (ch.11). Rather than invent an ending, the screen quotes the one
+sentence the document does supply for this exact moment, in ch.2:
+
+> "드디어 저곳에 도착했다."
+
+and lists the three completion conditions as evidence (모스키 / 덩굴 다리 /
+달빛 조각 — all existing in-game terms). Nothing new was written into the
+fiction.
+
+**Why the screen waits 1.6 seconds.** The chest opening is a busy moment: lid
+rotation, 14 reward particles, and the "달빛 조각을 획득했다!" toast. Dropping a
+full-screen scrim on top of that immediately means the player never sees the
+thing they just earned. The delay runs on the existing dt loop
+(`_completeDelayT`), not a new timer system.
+
+**Why gameplay freezes rather than just being covered.** The overlay's
+`pointer-events: auto` already blocks the touch buttons, but keyboard movement
+on desktop would still run underneath. Returning early from `Game.update()`
+settles it in one place and also guarantees requirement 10 — no further
+progression and no second completion event. Verified: 240 frames with a
+movement input held produced **0.00px** of movement for Luka, Moski and every
+Mossling, and `showComplete()` was called **0** more times over 300 further
+frames.
+
+**Testing note (unchanged from Step 1).** The browser pane could not render
+this session — the tool reports Claude's window as minimized/hidden, which
+stops the page drawing, so eval, screenshots, `get_page_text` and resize all
+time out while page loads and console reads keep working. Behaviour was
+therefore verified with the Node harness that drives the real modules through
+`Game.update()`. **The completion screen's layout has not been seen rendered** —
+its centring comes from the `.overlay` class the title screen has used since
+v0.1.1, and its text sizing uses the same `clamp()` + `word-break: keep-all`
+approach measured on the toast, but that is reasoning, not observation. Worth
+a look on a real phone.
+
+Verified: screen hidden at boot and through the whole run until the chest
+opens; appears at 1.62s after `gameComplete` latches; stays up indefinitely;
+`restartSession()` hides it, removes `body.mg-complete`, restores the river to
+a single solid, the chest to CLOSED, Moski to TRAPPED, and movement works
+again (42px) — the freeze releases. Regression: movement 42/-42, sword 3→2,
+Mossling CHASE + damage, respawn HP 5/5 at (200,590), Moonstone → cleansing
+(atmosphere 1, all dissolved). Console clean across three loads. No new button
+(`btn-start` / `btn-attack` / `btn-interact` / `btn-ability` unchanged), no
+localStorage, no JSON export, `feedback.js` untouched (0 lines).
+
+### Phase 11 STEP 1 — 프로토타입 완료 감지 (버전 유지: v0.1.11)
+
+Deliberately the smallest possible change: **one file, +41 lines, 0 deletions.**
+No existing line was modified — combat, movement, companion, bridge and chest
+logic are byte-identical.
+
+**Why a latch and not a per-frame check.** Evaluating the three conditions
+every frame would also work (none of them ever goes back to false on its own),
+but a latch states the intent: completion is an event that happens once, at the
+moment the chest opens. `checkPrototypeComplete()` short-circuits on
+`gameComplete`, so once it is true nothing can un-complete the prototype —
+verified by forcing `treasure.state` back to `'CLOSED'` and confirming the
+latch held.
+
+**Why check all three when only the chest can be the trigger.** At the OPEN
+transition the other two are already true by construction (the chest requires
+the bridge; the bridge requires recruitment). The full check is therefore a
+restatement of the contract in code rather than a filter — and it keeps the
+completion honest if some later step ever opens the chest by another path.
+Verified: with recruitment alone → false, recruitment + bridge → false, all
+three → true.
+
+**Testing note.** The browser pane's `javascript_exec` channel was unresponsive
+for this whole session (console reads and page loads worked; eval, screenshot
+and resize timed out). Rather than skip the behavioural tests, they were run
+through a Node harness that loads the real `js/*.js` modules against a DOM/
+canvas stub and drives `update()` frame by frame — the harness lives in the
+session scratchpad, not in the repo. Rendering was not exercised that way, but
+this step adds no rendering.
+
+Verified end to end: gameComplete stays false through 영입 → 다리 → 도강 →
+상자 접근, flips to true on the frame the chest reaches OPEN (0.55s open
+animation), and stays true across 300 further frames and a death/respawn.
+Restart clears it along with the chest (CLOSED, openT 0), the bridge (river
+back to a single solid) and Moski (TRAPPED). Death before opening leaves
+recruitment intact and completion false; the exact respawn frame still gives
+HP 5/5 at (200, 590) after 1.52s. Regression: movement 42/-42, sword 3→2,
+Mossling CHASE + damage 5→3, Moonstone → cleansing (atmosphere 1, all
+dissolved), and the full bridge/chest/completion chain still works after
+cleansing. Console clean at both desktop and 375×812. No completion screen, no
+inventory, no feedback/localStorage code — the only `LocalStorage` string in
+the bundle is the untouched Phase 12 header comment in `feedback.js`.
 
 ### Phase 10 STEP 3 — 보물 상자 개봉 (버전 유지: v0.1.11)
 

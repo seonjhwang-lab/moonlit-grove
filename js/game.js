@@ -51,6 +51,12 @@
   var TREASURE_LEAVE = 38;
   var TREASURE_OPEN_TIME = 0.55;   // 초 — 뚜껑이 열리는 연출 (게임은 멈추지 않는다)
 
+  /* PHASE 11 STEP 2: 완료 화면을 띄우기까지의 짧은 뜸.
+     상자가 열린 직후에는 뚜껑 연출 + 파티클 + "달빛 조각을 획득했다!" 토스트가
+     한꺼번에 일어난다. 그 위로 곧바로 전체 화면을 덮으면 방금 얻은 보상을
+     제대로 보지도 못하고 가려진다 — 잠깐 여운을 두고 올린다. */
+  var COMPLETE_DELAY = 1.6;        // 초
+
   var Game = {
     VERSION: '0.1.11',
     WIDTH: INTERNAL_W,
@@ -78,6 +84,25 @@
        그때 이 플래그를 켜고, 그때 비로소 강의 충돌을 걷어내게 된다.
        지금은 항상 false 이며, 따라서 강은 계속 막혀 있다. */
     bridgeActivated: false,
+
+    /* PHASE 11 STEP 1: Prototype 0.1 을 끝까지 마쳤는가.
+
+       이것은 "네 번째 진행 상태"가 아니라 이미 있는 셋에서 파생된 빗장(latch)이다:
+         MG.Companion.recruited          — 모스키 영입
+         MG.Game.bridgeActivated         — 덩굴 다리
+         MG.Map.treasure.state==='OPEN'  — 보물 상자
+       한 번 켜지면 다시 꺼지지 않는다. 사망/부활로는 되돌아가지 않는다
+       (Player.respawn() 은 모슬링만 되돌리고 Game 의 진행 플래그는 건드리지
+       않는다 — moonstoneFound / cleansed / bridgeActivated 와 같은 성질이다).
+       세션 재시작(restartSession)에서만 false 로 돌아간다.
+
+       이 단계는 "감지"까지다 — 완료 화면도, 문구도, 버튼도 만들지 않는다. */
+    gameComplete: false,
+
+    // PHASE 11 STEP 2: 완료 화면이 이미 올라갔는가 + 올리기까지 남은 뜸.
+    // 완료 "판정"은 gameComplete 하나가 계속 책임지고, 이 둘은 화면 표시 타이밍만 다룬다.
+    _completeShown: false,
+    _completeDelayT: COMPLETE_DELAY,
 
     // PHASE 10 STEP 3: 상자 상호작용 버튼 상태 캐시 (DOM 을 매 프레임 건드리지
     // 않기 위한 것 — companion.js 의 _promptShown 과 같은 방식)
@@ -275,6 +300,24 @@
       // PHASE 7 이후: 동료 갱신이 여기에 들어간다. 공격 상태 자체는
       // player.js 의 update() 안에서 combat.js 를 통해 함께 진행된다.
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
+
+      /* PHASE 11 STEP 2: 프로토타입이 끝났으면 완료 화면을 올리고 진행을 멈춘다.
+         · 화면이 올라간 뒤에는 게임플레이 갱신을 통째로 건너뛴다 — 그래서 완료
+           이후 다시 진행되는 일도, 완료 이벤트가 두 번 일어나는 일도 없다.
+         · 루프 자체는 계속 돌기 때문에 숲은 배경으로 그대로 그려진다(render 는
+           update 바깥에 있다). 카메라만 유지해 화면이 튀지 않게 한다. */
+      if (this.gameComplete) {
+        if (this._completeShown) {
+          this.updateCamera();
+          return;
+        }
+        this._completeDelayT -= dt;
+        if (this._completeDelayT <= 0) {
+          this._completeShown = true;
+          if (MG.UI && MG.UI.showComplete) MG.UI.showComplete();
+        }
+      }
+
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
       if (MG.Companion && MG.Companion.update) MG.Companion.update(dt);  // PHASE 9 STEP 2
@@ -370,6 +413,9 @@
             MG.Enemy.spawnParticles(tr.x, tr.y - 10, 14, 0, -1, 'reward');
           }
           if (MG.UI && MG.UI.showToast) MG.UI.showToast('달빛 조각을 획득했다!');
+          // PHASE 11 STEP 1: 상자가 열린 이 순간이 Prototype 0.1 의 끝이다.
+          // 여기서는 감지만 한다 — 화면/문구/버튼은 만들지 않는다.
+          this.checkPrototypeComplete();
         }
         return;
       }
@@ -417,6 +463,28 @@
       if (MG.Enemy && MG.Enemy.spawnParticles) {
         MG.Enemy.spawnParticles(tr.x, tr.y - 12, 8, 0, -1, 'reward');
       }
+    },
+
+    /* PHASE 11 STEP 1: 지금 세 조건이 모두 충족되었는가 — 순수 판독 함수다.
+       아무 상태도 바꾸지 않으므로 언제 몇 번을 불러도 안전하다. */
+    isPrototypeComplete: function () {
+      var recruited = !!(MG.Companion && MG.Companion.recruited);
+      var bridged = this.bridgeActivated === true;
+      var opened = !!(MG.Map && MG.Map.treasure && MG.Map.treasure.state === 'OPEN');
+      return recruited && bridged && opened;
+    },
+
+    /* 완료 조건을 검사해 충족되면 빗장을 채운다. 반환값은 현재 완료 여부다.
+
+       상자가 열리는 순간 나머지 둘은 이미 참일 수밖에 없다(상자는 다리를,
+       다리는 영입을 요구한다). 그래도 세 조건을 모두 확인하는 이유는, 나중에
+       상자를 여는 다른 경로가 생겨도 완료 판정이 조용히 어긋나지 않게 하려는
+       것이다 — 조건을 코드로 명시해 두는 편이 주석보다 오래 간다. */
+    checkPrototypeComplete: function () {
+      if (this.gameComplete) return true;        // 한 번 켜지면 계속 true
+      if (!this.isPrototypeComplete()) return false;
+      this.gameComplete = true;
+      return true;
     },
 
     showTreasurePrompt: function () {
@@ -504,6 +572,12 @@
       }
       this._treasureInRange = false;
       this._treasurePromptShown = false;
+      // PHASE 11 STEP 1: 완료 빗장도 반드시 풀린다 — 새 세션은 처음부터다.
+      this.gameComplete = false;
+      // PHASE 11 STEP 2: 완료 화면도 함께 걷어낸다(조작 컨트롤이 다시 나타난다).
+      this._completeShown = false;
+      this._completeDelayT = COMPLETE_DELAY;
+      if (MG.UI && MG.UI.hideComplete) MG.UI.hideComplete();
       this.hitStopT = 0;
 
       // 2) 달의 돌을 다시 잠들게 한다

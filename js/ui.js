@@ -25,6 +25,8 @@
       this.el.restart = document.getElementById('hud-restart'); // PHASE 9.1
       this.el.interact = document.getElementById('btn-interact'); // PHASE 9 STEP 1
       this.el.ability = document.getElementById('btn-ability');   // PHASE 10 STEP 2
+      this.el.complete = document.getElementById('overlay-complete'); // PHASE 11 STEP 2
+      this.el.completeRestart = document.getElementById('btn-complete-restart'); // PHASE 11 STEP 3
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -54,6 +56,24 @@
           e.preventDefault();
           if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
           if (MG.Game && MG.Game.restartSession) MG.Game.restartSession();
+        });
+      }
+
+      /* PHASE 11 STEP 3: 완료 화면의 "다시 모험하기".
+         위의 두 버튼과 완전히 같은 click 경로이고, 하는 일도 기존
+         MG.Game.restartSession() 하나를 부르는 것뿐이다 — 화면을 내리고
+         body 클래스를 떼고 보물/다리/모스키/플레이어를 되돌리는 일은 이미
+         restartSession() 안에 다 있으므로 여기서 다시 쓰지 않는다.
+
+         gameComplete 를 먼저 보는 이유: 버튼을 빠르게 연타해도 첫 클릭이
+         gameComplete 를 false 로 내리므로 두 번째부터는 조용히 무시된다
+         (restartSession 이 두 번 돌아 상태가 꼬이지 않는다). */
+      if (this.el.completeRestart) {
+        this.el.completeRestart.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (!MG.Game || !MG.Game.gameComplete) return;
+          if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
+          if (MG.Game.restartSession) MG.Game.restartSession();
         });
       }
 
@@ -313,6 +333,45 @@
     isAbilityVisible: function () {
       if (!this.el.ability) this.el.ability = document.getElementById('btn-ability');
       return !!(this.el.ability && !this.el.ability.hidden);
+    },
+
+    /* PHASE 11 STEP 2: 프로토타입 완료 화면.
+       표시만 담당한다 — 완료 여부는 MG.Game.gameComplete 가 이미 알고 있고,
+       여기서는 그 결과를 화면에 올릴 뿐이다. 새 상태도, 버튼도 만들지 않는다.
+
+       토스트를 먼저 내리는 이유: 상자를 열면 "달빛 조각을 획득했다!" 가 떠 있는데
+       그 위로 완료 화면이 덮이면 문구가 반쯤 가려진 채 남는다. 이미 재시작 문구가
+       같은 이유로 hideToast() 를 부르고 있다(PHASE 9.1) — 같은 방식을 따른다. */
+    showComplete: function () {
+      if (!this.el.complete) this.el.complete = document.getElementById('overlay-complete');
+      var el = this.el.complete;
+      if (!el || !el.hidden) return;              // 이미 떠 있으면 아무 것도 하지 않는다
+
+      if (this.hideToast) this.hideToast();
+
+      el.hidden = false;
+      void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록
+      el.classList.add('is-visible');
+      document.body.classList.add('mg-complete');
+    },
+
+    /* 세션 재시작에서만 불린다 — 즉시 걷어낸다(페이드 없이). */
+    hideComplete: function () {
+      if (!this.el.complete) this.el.complete = document.getElementById('overlay-complete');
+      document.body.classList.remove('mg-complete');
+      /* PHASE 12 STEP 1: 화면을 치울 때 피드백 폼도 처음 상태로 되돌린다.
+         (저장된 기록은 그대로 둔다 — 다시 모험한다고 지워지면 안 된다)
+         여기서 하면 restartSession() 구조를 건드리지 않아도 된다. */
+      if (MG.Feedback && MG.Feedback.resetForm) MG.Feedback.resetForm();
+      var el = this.el.complete;
+      if (!el) return;
+      el.classList.remove('is-visible');
+      el.hidden = true;
+    },
+
+    isCompleteVisible: function () {
+      if (!this.el.complete) this.el.complete = document.getElementById('overlay-complete');
+      return !!(this.el.complete && !this.el.complete.hidden);
     }
   };
 
