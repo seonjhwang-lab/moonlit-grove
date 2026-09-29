@@ -12,7 +12,20 @@ v0.1.11
 
 Current Phase:
 
-Phase 12 (FEEDBACK) — **STEP 1 COMPLETE (+ 모바일 키보드 수정 2차)**
+Phase 12 (FEEDBACK) — **STEP 1 COMPLETE (+ 모바일 키보드 구조 수정)**
+
+현재 구조 (ROOT-CAUSE FIX — 이것이 최종):
+* 피드백 폼은 완료 화면 안이 아니라 **`#feedback-screen` — `#game-root` 의
+  형제** 에 있다. `position: relative` 인 평범한 문서 흐름 요소다.
+* 완료 화면에는 **"피드백 남기기"** 버튼만 남는다. 누르면 독립 화면이 열리고,
+  그 동안만 `body.mg-feedback` 가 문서 스크롤을 푼다.
+* **feedback.js 실행 코드에 키보드 관련 계산이 한 줄도 없다** —
+  visualViewport / Game.resize / scrollIntoView / #game-root 조작 / 키보드 높이
+  상수 전부 0건. 안드로이드 Chrome 의 기본 동작에 그대로 맡긴다.
+* 게임 쪽(`#game-root`, 캔버스, 카메라)은 `position: fixed` 인 채 전혀 건드리지
+  않으므로 키보드가 올라와도 축소·이동하지 않는다.
+
+이전 두 차례 수정 기록 (실패한 접근):
 폼 + LocalStorage. 실기 Android 테스트/영상 피드백을 두 차례 반영했다.
 
 현재 키보드 대응 방식 (FIX 2 — 이것이 최종):
@@ -1327,6 +1340,58 @@ quiet is the safe direction, and this is an aesthetic call that needs a real
 phone speaker to judge. If it turns out to be inaudible on device, raise
 `AMBIENT.forest.windGain` to ~0.06 (and `cleansed` to ~0.045) to land inside
 the stated band. That is a two-number change in `js/audio.js`.
+
+### Phase 12 STEP 1 ROOT-CAUSE FIX — 피드백 화면 분리 (버전 유지: v0.1.11)
+
+**왜 값 조정으로는 절대 고쳐지지 않았는가.** 원인은 키보드 계산이 아니라 컨테이너
+구조였다:
+
+```css
+html, body { height: 100dvh; overflow: hidden; touch-action: none; }
+#game-root  { position: fixed; inset: 0; }
+```
+
+안드로이드 Chrome 은 포커스된 입력을 **문서를 스크롤해서** 화면 안으로 넣는다.
+그런데 body 는 `overflow: hidden` + `touch-action: none` 이고 루트는 고정이라
+**스크롤할 문서가 존재하지 않는다.** 브라우저의 기본 처리가 원천 차단된 상태에서
+그 동작을 JS 로 흉내내려 했던 것이 지금까지의 패치들이었다:
+
+* 1차 — `interactive-widget=resizes-content` + `#game-root` 이동 +
+  `Game.resize()`. 무대가 9:16 비율 고정이라 높이가 줄면 폭까지 줄어
+  화면 전체가 출렁였다.
+* 2차 — 오버레이 `bottom` 만 잘라내고 `scrollIntoView` 를 `nearest` 1회로.
+  덜 움직였을 뿐 같은 종류의 흉내였고 실기에서 증상이 남았다.
+
+**구조 변경.** 폼을 `#game-root` 밖으로 꺼내 `#feedback-screen` 이라는 형제
+요소로 만들었다. `position: relative` — 평범한 문서 흐름이다. 열려 있는 동안만
+`body.mg-feedback` 가 `overflow-y: auto; touch-action: auto` 를 돌려준다.
+그러면 문서가 스크롤 가능해지고, 키보드 대응은 여느 웹페이지와 똑같이
+브라우저가 알아서 한다. 그래서 **feedback.js 에서 키보드 코드를 전부 지웠다** —
+남은 `visualViewport` 참조 2건은 game.js/ui.js 의 v0.1.1 시절 리사이즈·방향
+처리이며 이 문제와 무관하다(HEAD 커밋에도 그대로 있다).
+
+DOM:
+```
+body
+ ├ #game-root (position: fixed)   ← 캔버스 / HUD / 완료 화면
+ └ #feedback-screen (relative)    ← 점수 / textarea / 보내기 / 돌아가기
+```
+
+데이터는 하나도 바뀌지 않았다: 키 `moonlit-grove-feedback`, 레코드
+`{rating, comment}`, 배열 누적, 필수 항목 없음.
+
+검증(하네스): 부팅 시 화면 숨김; 완료 화면에 폼이 더는 없음; "피드백 남기기" 로
+열면 `body.mg-feedback` 가 붙고 `#game-root` 에는 스타일이 전혀 붙지 않음;
+**키보드 상황(visualViewport 470px)을 흉내내도 카메라·캔버스·루트·오버레이
+어느 것도 반응하지 않음** (반응할 코드가 없다); 여러 줄 한글 의견이 `\n` 포함해
+그대로 저장되고 필드는 `comment,rating` 둘뿐; 재제출은 무시; "돌아가기" 로
+완료 화면 복귀 + 문서 스크롤 해제; 다시 모험하기로 폼·화면 초기화되며 저장
+기록은 유지; 두 번째 판에서 다시 남기면 배열에 덧붙음; 게임 이동 42px 정상.
+
+**실기 확인은 여전히 사용자 몫.** 브라우저 패널이 이 세션 내내 렌더링하지
+못했다(Claude 창 최소화/숨김). 이번 변경은 구조 자체를 바꾼 것이라 실기에서
+확인할 것은 단 하나다 — textarea 를 눌렀을 때 **게임 화면이 전혀 움직이지 않고**
+피드백 화면만 평범하게 스크롤되는가.
 
 ### Phase 12 STEP 1 FIX 2 — 키보드 UX 최종 (버전 유지: v0.1.11)
 

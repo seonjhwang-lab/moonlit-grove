@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 
 JS_FILES=(
   js/audio.js js/collision.js js/map.js js/input.js js/combat.js
-  js/player.js js/enemy.js js/companion.js js/feedback.js js/ui.js
+  js/player.js js/enemy.js js/companion.js js/customer.js js/feedback.js js/ui.js
   js/game.js js/main.js
 )
 

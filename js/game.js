@@ -57,6 +57,16 @@
      제대로 보지도 못하고 가려진다 — 잠깐 여운을 두고 올린다. */
   var COMPLETE_DELAY = 1.6;        // 초
 
+  /* LAZY DINER STEP 1: 문 발판을 밟아 구역을 전환한 직후, 같은 발판 위에
+     그대로 서 있는 상태로 곧장 되돌아가지 않도록 짧은 쿨다운을 둔다.
+     (스폰 위치 자체도 문 발판과 겹치지 않게 잡아 두 겹으로 막는다.) */
+  var ZONE_TRANSITION_COOLDOWN = 0.5;   // 초
+
+  /* LAZY DINER STEP 3: 화로 상호작용 사거리. 보물상자(28/38)와 같은 규모의
+     히스테리시스 관용구를 그대로 쓴다 — 방이 작아 살짝 더 좁혀 잡았다. */
+  var STOVE_INTERACT_ENTER = 26;
+  var STOVE_INTERACT_LEAVE = 36;
+
   var Game = {
     VERSION: '0.1.11',
     WIDTH: INTERNAL_W,
@@ -87,10 +97,10 @@
 
     /* PHASE 11 STEP 1: Prototype 0.1 을 끝까지 마쳤는가.
 
-       이것은 "네 번째 진행 상태"가 아니라 이미 있는 셋에서 파생된 빗장(latch)이다:
-         MG.Companion.recruited          — 모스키 영입
-         MG.Game.bridgeActivated         — 덩굴 다리
-         MG.Map.treasure.state==='OPEN'  — 보물 상자
+       STEP 5 부터 이 빗장을 채우는 조건은 Lazy Diner 의 것이다:
+         clueHeard && _farewellDone      — 단서를 듣고 작별까지 마침
+       (예전 Moonlit 조건 — 모스키 영입 + 덩굴 다리 + 보물 상자 — 은 더 이상
+        이 빗장을 채우지 않는다. 그 게임플레이 코드는 그대로 남아 있다.)
        한 번 켜지면 다시 꺼지지 않는다. 사망/부활로는 되돌아가지 않는다
        (Player.respawn() 은 모슬링만 되돌리고 Game 의 진행 플래그는 건드리지
        않는다 — moonstoneFound / cleansed / bridgeActivated 와 같은 성질이다).
@@ -108,6 +118,45 @@
     // 않기 위한 것 — companion.js 의 _promptShown 과 같은 방식)
     _treasureInRange: false,
     _treasurePromptShown: false,
+
+    // LAZY DINER STEP 1: 구역 전환 직후 남은 쿨다운(초). 0보다 크면 문 발판
+    // 검사 자체를 건너뛴다.
+    _zoneCooldownT: 0,
+
+    /* LAZY DINER STEP 2: 사냥으로 얻는 유일한 자원. moonstoneFound/cleansed 와
+       같은 성질이다 — 이번 세션 동안만 유지되고, 저장 시스템 없이 단순한
+       숫자 하나일 뿐이며, 사망/부활로는 절대 되돌아가지 않는다(Player.
+       respawn() 은 이 값을 건드리지 않는다). 재시작(restartSession)에서만
+       0 으로 돌아간다. */
+    meat: 0,
+
+    /* LAZY DINER STEP 3: 요리 결과물. meat 와 완전히 같은 성질(세션 동안만
+       유지, 사망/부활로 되돌아가지 않음, 재시작에서만 0으로)이다. 지금은
+       "고기라면" 하나뿐이지만, 나중에 다른 요리가 추가돼도 이 값의 자리를
+       옮길 필요가 없도록 이름을 meatRamen 으로 구체적으로 둔다(범용
+       "재료판"을 아직 만들지 않는다). */
+    meatRamen: 0,
+
+    // LAZY DINER STEP 3: 화로 상호작용 버튼 상태 캐시 — _treasureInRange 와
+    // 완전히 같은 방식(DOM 을 매 프레임 건드리지 않기 위한 것).
+    _stoveInRange: false,
+    _stovePromptShown: false,
+
+    /* LAZY DINER STEP 4-1: 첫 손님의 이야기를 끝까지 들었는가 — 불린 하나뿐이다.
+       moonstoneFound/cleansed 와 같은 성질(세션 동안만 유지, 사망/부활로
+       되돌아가지 않음, 재시작에서만 false로). STEP 5 부터 프로토타입 엔딩의
+       첫 번째 조건이다 — 아래 _farewellDone 과 함께 isPrototypeComplete() 를
+       이룬다. */
+    clueHeard: false,
+
+    /* LAZY DINER STEP 5: 프로토타입 엔딩(작별 한 줄)의 진행 상태. 불린 둘뿐이다.
+         _farewellStarted — 단서를 들은 뒤 문 발판을 밟아 작별 대사를 연 순간부터
+                            true. 이후로는 문이 다시 열리지 않고 조작이 잠긴다
+                            (대사 중 + 완료 화면 뜸 + 완료 화면). 재시작에서만 false.
+         _farewellDone    — 작별 대사를 끝까지 넘겼다. 이게 켜져야 엔딩이 확정된다.
+       사망/부활로는 되돌아가지 않고 재시작에서만 false 로 돌아간다. */
+    _farewellStarted: false,
+    _farewellDone: false,
 
     /* PHASE 8.1-B: 숲이 정화되었는가. moonstoneFound 와 마찬가지로 이번
        세션 동안만 유지되는 불린 하나이며, 사망/부활로 절대 되돌아가지
@@ -287,10 +336,16 @@
       cam.x = Math.round(MG.Player.x - INTERNAL_W / 2);
       cam.y = Math.round(MG.Player.y - INTERNAL_H / 2);
 
-      var maxX = MG.Map.WIDTH - INTERNAL_W;
-      var maxY = MG.Map.HEIGHT - INTERNAL_H;
-      if (cam.x < 0) cam.x = 0;
-      if (cam.y < 0) cam.y = 0;
+      // LAZY DINER STEP 1: 구역마다 지형이 시작하는 원점이 다를 수 있다
+      // (다이너는 바깥과 좌표가 겹치지 않도록 (2000,0)에서 시작한다).
+      // originX/Y 가 없으면(=바깥 구역) 0 이라 기존 동작과 완전히 같다.
+      var originX = MG.Map.originX || 0;
+      var originY = MG.Map.originY || 0;
+      var minX = originX, minY = originY;
+      var maxX = originX + MG.Map.WIDTH - INTERNAL_W;
+      var maxY = originY + MG.Map.HEIGHT - INTERNAL_H;
+      if (cam.x < minX) cam.x = minX;
+      if (cam.y < minY) cam.y = minY;
       if (cam.x > maxX) cam.x = maxX;
       if (cam.y > maxY) cam.y = maxY;
     },
@@ -300,6 +355,33 @@
       // PHASE 7 이후: 동료 갱신이 여기에 들어간다. 공격 상태 자체는
       // player.js 의 update() 안에서 combat.js 를 통해 함께 진행된다.
       if (MG.Input && MG.Input.update) MG.Input.update(dt);
+
+      // LAZY DINER STEP 4-3a: 다이너는 전투가 없는 안전지대다. attackPressed 를
+      // 읽는 곳은 player.js 의 공격 시작 판정 하나뿐이고 그건 이 아래
+      // Player.update() 에서 돈다 — 그래서 여기서 이번 프레임의 공격 입력만
+      // 지우면 스윙/히트박스/효과음이 전부 일어나지 않는다(키보드 Space 와
+      // 터치 공격 버튼 모두 이 한 플래그로 모인다). player/combat/input.js 는
+      // 건드리지 않는다. 다이너를 나가면 이 조건이 거짓이 되어 자동으로 복구된다.
+      if (MG.Input && MG.Map && MG.Map.zone === 'diner') MG.Input.attackPressed = false;
+
+      // LAZY DINER STEP 4-3b: 대화 중에는 조작이 대화로 완전히 넘어간다 — 이동/공격/
+      // 능력 입력을 이번 프레임에 한해 지운다. axis 는 새 객체로 바꾸지 않고 값만
+      // 0 으로 만든다(player.js 가 같은 객체를 읽는다). Input.update() 는 키를
+      // 누르고 있으면 매 프레임 axis 를 다시 채우므로 매 프레임 여기서 지운다.
+      // interactPressed 는 일부러 남긴다 — customer.js 가 E 입력을 "다음 줄"로
+      // 쓰기 때문이다(화로는 updateStove 의 대화 가드로 이미 막혀 있다).
+      // player/input.js 는 건드리지 않는다.
+      var speechOpen = !!(MG.UI && MG.UI.isSpeechOpen && MG.UI.isSpeechOpen());
+      if (MG.Input && (speechOpen || this._farewellStarted)) {
+        MG.Input.axis.x = 0;
+        MG.Input.axis.y = 0;
+        MG.Input.attackPressed = false;
+        MG.Input.abilityPressed = false;
+        // LAZY DINER STEP 5: 작별이 시작된 뒤에는 대사가 닫힌 다음(완료 화면이 뜰
+        // 때까지의 뜸)에도 상호작용을 잠근다. 대사가 열려 있는 동안만 interactPressed 를
+        // 남긴다 — 그때는 E 가 "다음 줄"이기 때문이다.
+        if (!speechOpen) MG.Input.interactPressed = false;
+      }
 
       /* PHASE 11 STEP 2: 프로토타입이 끝났으면 완료 화면을 올리고 진행을 멈춘다.
          · 화면이 올라간 뒤에는 게임플레이 갱신을 통째로 건너뛴다 — 그래서 완료
@@ -321,12 +403,117 @@
       if (MG.Player && MG.Player.update) MG.Player.update(dt);
       if (MG.Enemy && MG.Enemy.update) MG.Enemy.update(dt);
       if (MG.Companion && MG.Companion.update) MG.Companion.update(dt);  // PHASE 9 STEP 2
+      if (MG.Customer && MG.Customer.update) MG.Customer.update();      // LAZY DINER STEP 4-1
+      this.updateZoneTransition(dt);  // LAZY DINER STEP 1
       this.updateMoonstone(dt);
       this.updateCleansing(dt);
       this.updateTreasure(dt);        // PHASE 10 STEP 3
+      this.updateStove();             // LAZY DINER STEP 3
       this.updateRestartPrompt();
       this.updateCamera();
       if (DEBUG_MOBILE_LAYOUT) this.updateDebugPanel();
+    },
+
+    /* LAZY DINER STEP 2: 모슬링을 검으로 처치했을 때 enemy.js 가 정확히 한 번
+       호출한다 — 새 아이템/인벤토리 시스템을 만들지 않고 숫자 하나만 올린다.
+       기존 토스트(showToast)를 그대로 재사용해 알리고, HUD 숫자도 그 자리에서
+       갱신한다(매 프레임이 아니라 값이 바뀌는 순간에만 — hearts 와 같은 방식). */
+    addMeat: function (n) {
+      this.meat += n;
+      if (MG.UI && MG.UI.showToast) MG.UI.showToast('고기 × ' + n + ' 획득');
+      if (MG.UI && MG.UI.renderMeat) MG.UI.renderMeat(this.meat);
+    },
+
+    /* LAZY DINER STEP 1: 문 발판(MG.Map.doorTrigger)을 밟으면 활성 구역을
+       바꾼다. 새 씬 관리자를 만들지 않는다 — MG.Map 이 이미 solids/ground/
+       WIDTH/HEIGHT/spawn 을 최상위 속성으로 들고 있고, 다른 모든 시스템이
+       그 값을 매 프레임 새로 읽으므로, Map.setZone() 으로 그 값들만
+       바꿔치기하고 플레이어를 그 구역의 spawn 으로 옮기면 그걸로 끝난다.
+       사망 중에는 전환하지 않는다(사망 연출/부활은 지금 있던 구역에서
+       그대로 끝나야 한다). */
+    updateZoneTransition: function (dt) {
+      // LAZY DINER STEP 5: 작별이 시작된 뒤에는 문이 다시 열리지 않는다 — 대사 중,
+      // 완료 화면이 뜨기 전의 뜸, 완료 화면 어느 때에도 플레이어는 다이너에 남는다.
+      if (this._farewellStarted) return;
+
+      if (this._zoneCooldownT > 0) {
+        this._zoneCooldownT = Math.max(0, this._zoneCooldownT - dt);
+        return;
+      }
+
+      var M = MG.Map, p = MG.Player;
+      if (!M || !p || !M.doorTrigger || !MG.Collision) return;
+      if (p.state === 'DEAD') return;
+
+      var r = MG.Collision.footRect(p.x, p.y, p.FOOT_W, p.FOOT_H);
+      var d = M.doorTrigger;
+      if (!MG.Collision.overlaps(r.x, r.y, r.w, r.h, d.x, d.y, d.w, d.h)) return;
+
+      // LAZY DINER STEP 5: 단서를 들은 뒤 다이너 문을 밟으면 밖으로 나가는 대신
+      // 작별 대사가 열린다. 구역 전환은 이번 프레임에 일어나지 않는다.
+      if (M.zone === 'diner' && this.clueHeard) {
+        this.startFarewell();
+        return;
+      }
+
+      var next = (M.zone === 'outside') ? 'diner' : 'outside';
+      M.setZone(next);
+      p.x = M.spawn.x;
+      p.y = M.spawn.y;
+      this._zoneCooldownT = ZONE_TRANSITION_COOLDOWN;
+
+      // LAZY DINER STEP 4-3a: 휘두르던 중에 문을 지나왔다면 그 스윙을 여기서
+      // 끝낸다(안전지대 안에서 칼이 0.22초 더 보이지 않게). 상태 값만 내릴 뿐
+      // player.js/combat.js 는 건드리지 않는다 — combat.advance() 는
+      // attacking 이 false 면 아무 것도 하지 않는다.
+      if (next === 'diner') {
+        p.attacking = false;
+        p.attackT = 0;
+      }
+      this.syncZoneClass();
+
+      // LAZY DINER STEP 4-1: 구역이 바뀌면 대화 상자를 반드시 닫는다 —
+      // 손님은 다이너에만 있으므로, 다이너를 나가는 순간 열려 있던 대화가
+      // 화면에 계속 떠 있으면 안 된다. onDone(단서 확보)은 부르지 않는다 —
+      // 끝까지 듣지 않고 나간 것이므로 그 보상은 다음에 다시 들어야 한다.
+      if (MG.UI && MG.UI.hideSpeech) MG.UI.hideSpeech();
+    },
+
+    /* LAZY DINER STEP 5: 작별 시작. 한 번만 — _farewellStarted 가 곧 그 가드다.
+       손님의 작별 한 줄을 기존 대화 상자로 열고, 끝까지 넘기면 finishFarewell 이
+       불린다. 대화를 연 입력이 곧바로 닫아버리지 않는 것은 4-3b 의 입력 가드
+       (열린 직후 250ms 무시 + pointerdown 만 듣기)가 이미 보장한다. */
+    startFarewell: function () {
+      if (this._farewellStarted) return;
+      this._farewellStarted = true;
+
+      var self = this;
+      var opened = MG.Customer && MG.Customer.farewell &&
+        MG.Customer.farewell(function () { self.finishFarewell(); });
+
+      // 대사를 열지 못한 경우에도 엔딩이 멈춰 서서 문이 영영 막히는 일이 없게 한다.
+      if (!opened) this.finishFarewell();
+    },
+
+    /* LAZY DINER STEP 5: 작별 대사가 끝났다 — 기존 완료 흐름에 넘긴다.
+       body.mg-complete 를 여기서 미리 붙이는 이유: 대사가 닫히며 mg-talking 이
+       떨어지는 그 순간과 완료 화면이 뜨는 1.6초 뒤 사이에 조이스틱/버튼이
+       잠깐 다시 보이지 않게 하려는 것이다(같은 호출 안에서 뗐다 붙이므로 그
+       사이에 화면이 그려지지 않는다). 뜸/오버레이는 기존 COMPLETE_DELAY 와
+       showComplete() 를 그대로 쓴다. */
+    finishFarewell: function () {
+      if (this._farewellDone) return;
+      this._farewellDone = true;
+      document.body.classList.add('mg-complete');
+      this.checkPrototypeComplete();
+    },
+
+    /* LAZY DINER STEP 4-3a: 지금 구역을 body 클래스로 알린다 — style.css 가
+       다이너에서 공격 버튼을 숨긴다(mg-complete/mg-playing 과 같은 방식).
+       setZone() 을 부르는 모든 곳(구역 전환, 재시작) 뒤에 호출한다. */
+    syncZoneClass: function () {
+      var diner = !!(MG.Map && MG.Map.zone === 'diner');
+      document.body.classList.toggle('mg-diner', diner);
     },
 
     /* PHASE 8: 달의 돌 — 오직 "실제 검 히트박스가 겹쳤을 때"만 활성화된다.
@@ -465,21 +652,79 @@
       }
     },
 
+    /* LAZY DINER STEP 3: 화로 — 보물상자와 완전히 같은 사거리 히스테리시스
+       패턴이다(_stoveInRange 가 들어오면 버튼을 띄우고, 그 범위 안에서
+       기존 interactPressed 1프레임 엣지가 눌리면 딱 한 번만 요리한다).
+       화로는 다이너 좌표에만 존재하므로, 바깥에 있는 동안은 거리 판정이
+       항상 거짓이라 이 함수는 사실상 아무 일도 하지 않는다(달의 돌/보물과
+       같은 방식 — 구역 분기를 따로 두지 않아도 된다). */
+    updateStove: function () {
+      // LAZY DINER STEP 4-1: 손님과 대화 중에는 화로가 반응하지 않는다 —
+      // 화로/손님이 같은 공유 interactPressed 를 쓰므로, 대화창을 넘기는
+      // 입력이 실수로 요리까지 트리거하지 않게 막는다(사거리가 겹치지 않아
+      // 실제로는 거의 발생하지 않지만, 명시적으로 막아 둔다).
+      if (MG.UI && MG.UI.isSpeechOpen && MG.UI.isSpeechOpen()) return;
+
+      var s = MG.Map && MG.Map.stove;
+      var p = MG.Player;
+      if (!s || !p || p.state === 'DEAD') {
+        this._stoveInRange = false;
+        this.hideStovePrompt();
+        return;
+      }
+
+      var dx = p.x - s.x, dy = p.y - s.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (!this._stoveInRange && dist <= STOVE_INTERACT_ENTER) this._stoveInRange = true;
+      else if (this._stoveInRange && dist > STOVE_INTERACT_LEAVE) this._stoveInRange = false;
+
+      if (this._stoveInRange) this.showStovePrompt();
+      else this.hideStovePrompt();
+
+      if (this._stoveInRange && MG.Input && MG.Input.interactPressed) {
+        this.cookMeatRamen();
+      }
+    },
+
+    showStovePrompt: function () {
+      if (this._stovePromptShown) return;
+      this._stovePromptShown = true;
+      if (MG.UI && MG.UI.showInteract) MG.UI.showInteract();
+    },
+
+    hideStovePrompt: function () {
+      if (!this._stovePromptShown) return;
+      this._stovePromptShown = false;
+      if (MG.UI && MG.UI.hideInteract) MG.UI.hideInteract();
+    },
+
+    /* LAZY DINER STEP 3: 재료 하나를 실제로 요리로 바꾼다 — 성공했을 때만
+       meat 를 소비한다(실패 시에는 아무 것도 줄지 않는다). 나중에 다른
+       요리가 추가될 걸 대비해 "이 요리를 만드는 함수" 하나를 그대로 두는
+       구조로만 남긴다 — 레시피 목록/조회 테이블은 아직 만들지 않는다. */
+    cookMeatRamen: function () {
+      if (this.meat >= 1) {
+        this.meat -= 1;
+        this.meatRamen += 1;
+        if (MG.UI && MG.UI.renderMeat) MG.UI.renderMeat(this.meat);
+        if (MG.UI && MG.UI.renderRamen) MG.UI.renderRamen(this.meatRamen);
+        if (MG.UI && MG.UI.showToast) MG.UI.showToast('고기라면을 만들었다.');
+      } else {
+        if (MG.UI && MG.UI.showToast) MG.UI.showToast('재료가 없다.');
+      }
+    },
+
     /* PHASE 11 STEP 1: 지금 세 조건이 모두 충족되었는가 — 순수 판독 함수다.
        아무 상태도 바꾸지 않으므로 언제 몇 번을 불러도 안전하다. */
     isPrototypeComplete: function () {
-      var recruited = !!(MG.Companion && MG.Companion.recruited);
-      var bridged = this.bridgeActivated === true;
-      var opened = !!(MG.Map && MG.Map.treasure && MG.Map.treasure.state === 'OPEN');
-      return recruited && bridged && opened;
+      // STEP 5: Lazy Diner 의 완료 조건 — 단서를 들었고, 작별까지 마쳤다.
+      // (예전 Moonlit 조건은 여기서 빠졌다. 보물 상자를 열어도 updateTreasure() 가
+      //  checkPrototypeComplete() 를 부르지만 이 조건이 거짓이라 아무 일도 없다.)
+      return this.clueHeard === true && this._farewellDone === true;
     },
 
     /* 완료 조건을 검사해 충족되면 빗장을 채운다. 반환값은 현재 완료 여부다.
-
-       상자가 열리는 순간 나머지 둘은 이미 참일 수밖에 없다(상자는 다리를,
-       다리는 영입을 요구한다). 그래도 세 조건을 모두 확인하는 이유는, 나중에
-       상자를 여는 다른 경로가 생겨도 완료 판정이 조용히 어긋나지 않게 하려는
-       것이다 — 조건을 코드로 명시해 두는 편이 주석보다 오래 간다. */
+       finishFarewell() 이 부르고, 보물 상자 코드도 그대로 부른다(무해하다). */
     checkPrototypeComplete: function () {
       if (this.gameComplete) return true;        // 한 번 켜지면 계속 true
       if (!this.isPrototypeComplete()) return false;
@@ -557,6 +802,28 @@
        조기 반환하므로(정화 후 부활에서 적이 돌아오지 않게 하는 장치),
        반드시 cleansed 를 먼저 내린 뒤에 호출해야 한다. */
     restartSession: function () {
+      // LAZY DINER STEP 1: 재시작은 항상 바깥 구역에서 다시 시작한다
+      // (Player.init() 이 아래에서 MG.Map.spawn 을 읽으므로 그보다 먼저 해야 한다).
+      if (MG.Map && MG.Map.setZone) MG.Map.setZone('outside');
+      this._zoneCooldownT = 0;
+      this.syncZoneClass();   // LAZY DINER STEP 4-3a: 공격 버튼이 다시 보이게
+
+      // LAZY DINER STEP 2/3: 고기와 요리 모두 새 세션에서는 0부터 다시 시작한다.
+      this.meat = 0;
+      this.meatRamen = 0;
+      if (MG.UI && MG.UI.renderMeat) MG.UI.renderMeat(0);
+      if (MG.UI && MG.UI.renderRamen) MG.UI.renderRamen(0);
+      this._stoveInRange = false;
+      this._stovePromptShown = false;
+
+      // LAZY DINER STEP 4-1: 손님도 처음 상태(WAITING/chapter 0)로, 단서도
+      // 못 들은 것으로, 열려 있을지 모르는 대화 상자도 즉시 닫는다.
+      this.clueHeard = false;
+      this._farewellStarted = false;   // LAZY DINER STEP 5: 엔딩도 처음부터
+      this._farewellDone = false;
+      if (MG.UI && MG.UI.hideSpeech) MG.UI.hideSpeech();
+      if (MG.Customer && MG.Customer.init) MG.Customer.init();
+
       // 1) 정화/목표 상태를 먼저 되돌린다
       this.cleansed = false;
       this.cleanse = null;
@@ -683,6 +950,7 @@
       var props = MG.Map.collectProps([], cam);
       if (MG.Enemy && MG.Enemy.collect) MG.Enemy.collect(props, cam);
       if (MG.Companion && MG.Companion.collect) MG.Companion.collect(props, cam);  // PHASE 9 STEP 2
+      if (MG.Customer && MG.Customer.collect) MG.Customer.collect(props, cam);     // LAZY DINER STEP 4-1
       if (MG.Player) {
         props.push({ y: MG.Player.y, kind: 'player' });
       }
@@ -695,10 +963,18 @@
           MG.Enemy.renderOne(ctx, props[i].obj);
         } else if (props[i].kind === 'companion') {
           MG.Companion.renderOne(ctx, props[i].obj);   // PHASE 9 STEP 2
+        } else if (props[i].kind === 'customer') {
+          MG.Customer.renderOne(ctx, props[i].obj);    // LAZY DINER STEP 4-1
         } else {
           MG.Map.renderProp(ctx, props[i]);
         }
       }
+
+      // LAZY DINER STEP 4-3a: 카운터 위 자리(매트/유리병/라면 그릇)는 y 정렬과
+      // 무관하게 소품 위에 그린다 — 카운터 앞에 선 플레이어가 그릇을 가리면
+      // "라면이 놓였다"는 피드백이 안 보이기 때문이다. 바깥에서는 카메라
+      // 밖이라 아무것도 보이지 않는다.
+      if (MG.Customer && MG.Customer.renderCounterItems) MG.Customer.renderCounterItems(ctx);
 
       if (MG.Enemy && MG.Enemy.renderParticles) MG.Enemy.renderParticles(ctx);
 
@@ -714,7 +990,9 @@
 
       ctx.restore();
 
-      this.drawAtmosphere(ctx);   // PHASE 8.1-C: 정화 전/후 공기감
+      // PHASE 8.1-C: 정화 전/후 공기감. LAZY DINER STEP 4-3a: 숲의 차가운 푸른
+      // 어둠은 다이너(따뜻한 실내)에는 깔지 않는다 — 손님이 배경과 분리돼 보이게.
+      if (!(MG.Map && MG.Map.zone === 'diner')) this.drawAtmosphere(ctx);
       this.drawVignette(ctx);
       this.drawCleanseFlash(ctx); // 활성화 순간의 아주 짧은 섬광 (맨 위)
     },

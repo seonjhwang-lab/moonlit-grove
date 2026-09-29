@@ -560,6 +560,11 @@
         e.knockVX = 0; e.knockVY = 0;
         this.spawnParticles(e.x, e.y, 6, nx, ny, 'moss');
         if (MG.Audio && MG.Audio.playEnemyDefeat) MG.Audio.playEnemyDefeat();
+        // LAZY DINER STEP 2: hp 가 0 이 되는 이 지점은 이 모슬링당 정확히 한 번만
+        // 지나간다(위의 lastHitAttackId 검사가 같은 스윙의 중복 판정을, 그리고
+        // DEAD 상태 자체가 checkSwordHit() 의 이후 재판정을 막는다) — 그래서
+        // 별도의 "이미 보상받음" 플래그 없이도 고기가 한 번만 지급된다.
+        if (MG.Game && MG.Game.addMeat) MG.Game.addMeat(1);
       } else {
         e.state = 'HIT';
         e.stateT = KNOCKBACK_DURATION;             // E. 넉백 (기존 값 그대로)

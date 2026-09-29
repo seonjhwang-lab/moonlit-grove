@@ -20,6 +20,8 @@
       this.el.startBtn = document.getElementById('btn-start');
       this.el.version = document.getElementById('hud-version');
       this.el.hearts = document.getElementById('hud-hearts');
+      this.el.meat = document.getElementById('hud-meat'); // LAZY DINER STEP 2
+      this.el.ramen = document.getElementById('hud-ramen'); // LAZY DINER STEP 3
       this.el.toast = document.getElementById('hud-toast');     // PHASE 8
       this.el.victory = document.getElementById('hud-victory'); // PHASE 8.1
       this.el.restart = document.getElementById('hud-restart'); // PHASE 9.1
@@ -27,6 +29,11 @@
       this.el.ability = document.getElementById('btn-ability');   // PHASE 10 STEP 2
       this.el.complete = document.getElementById('overlay-complete'); // PHASE 11 STEP 2
       this.el.completeRestart = document.getElementById('btn-complete-restart'); // PHASE 11 STEP 3
+      // LAZY DINER STEP 4-1: 손님과의 짧은 대화 상자
+      this.el.speechLayer = document.getElementById('speech-layer');   // STEP 4-3b: 전체 화면 탭 받이
+      this.el.speech = document.getElementById('speech-box');
+      this.el.speechName = document.getElementById('speech-name');
+      this.el.speechText = document.getElementById('speech-text');
 
       if (this.el.version && MG.Game) {
         this.el.version.textContent = 'v' + MG.Game.VERSION;
@@ -35,6 +42,11 @@
       // PHASE 7: 부팅 시점의 초기 체력을 곧바로 표시한다 (이후로는 HP가 실제로
       // 바뀔 때만 player.js 가 다시 호출한다 — 매 프레임 갱신하지 않는다)
       if (MG.Player) this.renderHearts(MG.Player.hp, MG.Player.maxHp);
+      // LAZY DINER STEP 2: 고기도 같은 방식 — 부팅 시 한 번, 이후로는 값이
+      // 바뀔 때만(game.js 의 addMeat/restartSession) 다시 그린다.
+      if (MG.Game) this.renderMeat(MG.Game.meat);
+      // LAZY DINER STEP 3: 요리 결과물도 같은 방식으로 부팅 시 한 번 그린다.
+      if (MG.Game) this.renderRamen(MG.Game.meatRamen);
 
       var self = this;
 
@@ -74,6 +86,22 @@
           if (!MG.Game || !MG.Game.gameComplete) return;
           if (MG.Audio && MG.Audio.unlock) MG.Audio.unlock();
           if (MG.Game.restartSession) MG.Game.restartSession();
+        });
+      }
+
+      /* LAZY DINER STEP 4-3b: 화면 어디를 눌러도 다음 줄로 — 대화가 열려 있는
+         동안에만 존재하는 투명 레이어 하나가 pointerdown 을 받는다.
+         click 이 아니라 pointerdown 만 쓰는 이유: 손가락을 뗀 뒤 브라우저가 보내는
+         합성 click 은 "손가락 아래에 그때 있던 요소"로 가는데, 상호작용 버튼으로
+         대화를 열었다면 그 버튼은 이미 사라지고 레이어가 그 자리에 있다 — click 을
+         들으면 대화를 연 그 터치가 첫 줄에서 곧장 둘째 줄로 넘겨버릴 수 있다.
+         pointerdown 은 "새로 눌렀을 때"만 발생하므로 그 위험이 없다.
+         데스크톱의 E 입력은 customer.js 가 별도로 처리하고 둘 다 advanceSpeech()
+         하나로 모인다(가드는 거기에 있다). */
+      if (this.el.speechLayer) {
+        this.el.speechLayer.addEventListener('pointerdown', function (e) {
+          e.preventDefault();
+          self.advanceSpeech();
         });
       }
 
@@ -141,6 +169,114 @@
       for (var i = 0; i < maxHp; i++) str += (i < full) ? '❤️' : '🤍';
 
       if (this.el.hearts.textContent !== str) this.el.hearts.textContent = str;
+    },
+
+    /* LAZY DINER STEP 2: #hud-meat 를 숫자로 채운다. hearts 와 완전히 같은
+       패턴 — 값이 바뀐 순간에만 호출된다(매 프레임 갱신하지 않는다). */
+    renderMeat: function (n) {
+      if (!this.el.meat) this.el.meat = document.getElementById('hud-meat');
+      if (!this.el.meat) return;
+
+      var str = '🍖 ' + n;
+      if (this.el.meat.textContent !== str) this.el.meat.textContent = str;
+    },
+
+    /* LAZY DINER STEP 3: #hud-ramen 을 숫자로 채운다. renderMeat 와 완전히
+       같은 패턴이다. */
+    renderRamen: function (n) {
+      if (!this.el.ramen) this.el.ramen = document.getElementById('hud-ramen');
+      if (!this.el.ramen) return;
+
+      var str = '🍜 ' + n;
+      if (this.el.ramen.textContent !== str) this.el.ramen.textContent = str;
+    },
+
+    /* LAZY DINER STEP 4-1: 손님과의 짧은 대화 상자. 일반 다이얼로그 엔진이
+       아니다 — 한 줄씩 보여주고, 탭이나 E 입력으로 다음 줄로 넘기고, 마지막
+       줄에서 onDone 을 부르며 스스로 닫힌다. 분기/조건/선택지는 없다.
+       _speech 가 null 이 아니면 "지금 열려 있다"는 뜻이다. */
+    _speech: null,
+
+    /* STEP 4-3b 입력 가드(밀리초).
+       OPEN_GUARD — 대화가 열린 직후에는 다음 줄로 넘기지 않는다. 대화를 연 그
+         입력(버튼 탭/E)이 곧바로 둘째 줄로 새는 것을 막는 두 번째 안전장치다.
+         (첫 번째 안전장치는 구조 자체다: 레이어는 열린 뒤에 생기므로 그 터치의
+         pointerdown 을 받을 수 없고, click 은 아예 듣지 않는다.)
+       ADVANCE_GAP — 한 번 넘긴 뒤 아주 짧은 시간 안의 추가 입력은 무시한다.
+         같은 프레임에 pointerdown 이 여러 번 들어와도(멀티터치/연타) 한 줄만
+         진행된다. 사람이 일부러 누르는 속도(> 200ms)에는 영향이 없다. */
+    OPEN_GUARD_MS: 250,
+    ADVANCE_GAP_MS: 120,
+
+    _now: function () {
+      return (global.performance && global.performance.now) ? global.performance.now() : Date.now();
+    },
+
+    showSpeech: function (name, lines, onDone) {
+      if (!this.el.speech) this.el.speech = document.getElementById('speech-box');
+      if (!this.el.speechLayer) this.el.speechLayer = document.getElementById('speech-layer');
+      if (!this.el.speech || !this.el.speechLayer || !lines || !lines.length) return;
+
+      var now = this._now();
+      this._speech = { lines: lines, index: 0, onDone: onDone || null, openedAt: now, lastAdvanceAt: now };
+      if (this.el.speechName) this.el.speechName.textContent = name || '';
+      if (this.el.speechText) this.el.speechText.textContent = lines[0];
+
+      // 대화 중에는 토스트가 겹쳐 보이면 안 된다(요구사항) — 열리는 순간 한 번 치운다.
+      if (this.hideToast) this.hideToast();
+
+      // 조작이 대화로 완전히 넘어간다. 눌려 있던 조이스틱/버튼 상태는 여기서 비운다 —
+      // 조이스틱 영역이 손가락이 닿은 채로 숨겨지면 pointerup 을 못 받아
+      // 대화가 끝난 뒤에도 조이스틱이 "이미 다른 손가락이 쓰는 중"으로 남을 수 있다.
+      if (MG.Input && MG.Input.reset) MG.Input.reset();
+      document.body.classList.add('mg-talking');
+
+      this.el.speechLayer.hidden = false;
+      this.el.speech.hidden = false;
+    },
+
+    /* 다음 줄로. 마지막 줄이었다면 닫고 onDone 을 한 번만 부른다.
+       onDone 은 "끝까지 들었을 때"만 불린다 — hideSpeech() 로 중간에
+       닫히는 경우(구역 전환/재시작)에는 절대 불리지 않는다.
+       레이어 탭, 대화 상자 탭, E 입력, 상호작용 버튼 — 모든 진행 경로가 여기로
+       모이므로 입력 가드도 여기 한 곳에 있다. */
+    advanceSpeech: function () {
+      var s = this._speech;
+      if (!s) return;
+
+      var now = this._now();
+      if (now - s.openedAt < this.OPEN_GUARD_MS) return;
+      if (now - s.lastAdvanceAt < this.ADVANCE_GAP_MS) return;
+      s.lastAdvanceAt = now;
+
+      s.index += 1;
+      if (s.index >= s.lines.length) {
+        var onDone = s.onDone;
+        this._closeSpeechDom();
+        if (onDone) onDone();      // 조작이 복구된 뒤에 단서 토스트가 뜬다
+        return;
+      }
+      if (this.el.speechText) this.el.speechText.textContent = s.lines[s.index];
+    },
+
+    isSpeechOpen: function () {
+      return !!this._speech;
+    },
+
+    /* 상태와 화면을 함께 닫는다(mg-talking 도 여기서 뗀다). */
+    _closeSpeechDom: function () {
+      this._speech = null;
+      document.body.classList.remove('mg-talking');
+      if (this.el.speechLayer) this.el.speechLayer.hidden = true;
+      if (this.el.speech) this.el.speech.hidden = true;
+    },
+
+    /* 중간에 강제로 닫는다(구역 전환/재시작 전용) — onDone 을 부르지 않는다. */
+    hideSpeech: function () {
+      if (!this.el.speechLayer) this.el.speechLayer = document.getElementById('speech-layer');
+      if (!this.el.speech) this.el.speech = document.getElementById('speech-box');
+      if (!this._speech && !document.body.classList.contains('mg-talking')) return;
+      this._closeSpeechDom();
     },
 
     /* PHASE 8: 잠깐 떴다 저절로 사라지는 알림. 퀘스트 로그도, 상시 목표
@@ -270,10 +406,19 @@
        나타날 때만 짧게 페이드인하고, 숨길 때는 지연 없이 즉시 hidden 으로 뺀다.
        (컨트롤이므로 사라지는 중에 탭이 먹히면 안 된다 — 문구용 페이드아웃과
         다르게 다뤄야 하는 지점이다) */
-    showInteract: function () {
+    showInteract: function (icon) {
       if (!this.el.interact) this.el.interact = document.getElementById('btn-interact');
       var el = this.el.interact;
-      if (!el || !el.hidden) return;
+      if (!el) return;
+
+      // LAZY DINER STEP 4-3a: 무엇과 상호작용하는지에 따라 아이콘만 바꾼다
+      // (예: 손님에게 라면을 건넬 수 있으면 🍜). 인자가 없으면 기본 👋 —
+      // 모스키/보물상자/화로 호출은 그대로 기본값을 받는다. 이미 보이는
+      // 버튼의 아이콘도 바뀌어야 하므로 아래 조기 반환보다 먼저 갱신한다.
+      var label = icon || '👋';
+      if (el.textContent !== label) el.textContent = label;
+
+      if (!el.hidden) return;
 
       el.hidden = false;
       void el.offsetWidth;          // 숨김 → 표시 전환에서 페이드가 생략되지 않도록

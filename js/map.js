@@ -101,6 +101,41 @@
   var MOONSTONE_HIT_W = 16;
   var MOONSTONE_HIT_H = 18;
 
+  /* ==========================================================================
+     LAZY DINER STEP 1: 두 구역(바깥 폐허 ↔ 다이너 내부) 전환.
+
+     새 씬 관리 프레임워크를 만들지 않는다 — Map 이 이미 solids/ground/
+     WIDTH/HEIGHT/spawn 을 최상위 속성으로 들고 있고, game.js/player.js/
+     enemy.js 는 전부 그 속성을 매 프레임 새로 읽으므로(캐시하지 않는다),
+     "지금 활성 구역이 무엇인가에 따라 이 속성들의 값을 바꿔치기한다"는
+     것만으로 충분하다(Map.setZone 참고).
+
+     다이너는 바깥 지형(0~1440, 0~810)과 좌표가 절대 겹치지 않도록 멀리
+     떨어진 원점(2000,0)에 둔다 — 그러면 나무/바위/모슬링/모스키/달의돌처럼
+     기존에 카메라 범위로 컬링하던 모든 렌더/수집 함수가 손대지 않아도
+     자동으로 서로를 가리지 않는다(다이너 화면엔 바깥 오브젝트가 전혀
+     보이지 않고, 바깥 화면엔 다이너 벽이 전혀 보이지 않는다).
+     다이너 크기를 내부 해상도(360x640)와 정확히 같게 잡아 카메라가 전혀
+     스크롤하지 않는 — "방 하나가 화면 하나" — 가장 단순한 형태로 만들었다.
+     ========================================================================== */
+  var DINER_W = 360, DINER_H = 640;
+  var DINER_ORIGIN_X = 2000, DINER_ORIGIN_Y = 0;
+
+  /* 바깥쪽 문(다이너 입구) — 시작 공터([200,700,122]) 안, 스폰(200,590)에서
+     남쪽으로 곧장 걸어가면 닿는 자리. 나무는 공터 안에 자라지 않으므로
+     지형과 겹칠 걱정이 없다. */
+  var DINER_DOOR_X = 200, DINER_DOOR_Y = 650;
+  var DINER_DOOR_TRIGGER = { x: DINER_DOOR_X - 16, y: DINER_DOOR_Y - 14, w: 32, h: 16 };
+
+  var DINER_PALETTE = {
+    wall: '#3a2c22',
+    wallDark: '#241a13',
+    floor: '#6d4a2e',
+    floorLine: 'rgba(40, 26, 16, 0.35)',
+    doorway: '#8a6a3a',
+    doorwayLight: '#c9a76a'
+  };
+
   var PALETTE = {
     grassDark:  '#17351f',
     grassMid:   '#1e4527',
@@ -194,11 +229,213 @@
     /* 플레이어 시작 위치 (player.js 가 참조) */
     spawn: { x: 200, y: 590 },
 
+    /* LAZY DINER STEP 1: 활성 구역 상태. init() 의 setZone('outside') 가
+       채우기 전까지의 기본값일 뿐이며, 실제 값은 항상 setZone() 이 정한다. */
+    zone: 'outside',
+    originX: 0,
+    originY: 0,
+    doorTrigger: null,
+
+    /* 바깥에서 보이는 다이너 문 — 다른 y정렬 소품(보물상자/덩굴앵커)과
+       똑같은 방식으로 collectProps/renderProp 을 통해 그려진다. */
+    dinerDoorProp: { x: DINER_DOOR_X, y: DINER_DOOR_Y },
+
     init: function () {
       this.buildProps();
       this.buildSolids();
       this.buildFireflies();
       this.bakeGround();
+
+      // LAZY DINER STEP 1: 두 구역의 데이터를 한 번만 만들어 두고,
+      // 이후로는 setZone() 이 활성 구역의 값만 최상위 속성에 옮겨 쓴다.
+      this._zones = {
+        outside: {
+          WIDTH: MAP_W, HEIGHT: MAP_H,
+          originX: 0, originY: 0,
+          ground: this.ground, solids: this.solids,
+          spawn: { x: 200, y: 590 },
+          doorTrigger: DINER_DOOR_TRIGGER
+        },
+        diner: this.buildDinerZone()
+      };
+      this.setZone('outside');
+    },
+
+    /* LAZY DINER STEP 1: 활성 구역을 바꾼다 — WIDTH/HEIGHT/ground/solids/
+       spawn/doorTrigger 를 그 구역 것으로 바꿔치기할 뿐, 플레이어 좌표는
+       여기서 건드리지 않는다(호출한 쪽이 옮긴다 — game.js 참고). */
+    setZone: function (name) {
+      var z = this._zones && this._zones[name];
+      if (!z) return;
+      this.zone = name;
+      this.WIDTH = z.WIDTH;
+      this.HEIGHT = z.HEIGHT;
+      this.originX = z.originX;
+      this.originY = z.originY;
+      this.ground = z.ground;
+      this.solids = z.solids;
+      this.spawn = z.spawn;
+      this.doorTrigger = z.doorTrigger;
+    },
+
+    /* LAZY DINER STEP 1: 아주 작은 다이너 내부 — 벽 + 바닥 + 문턱뿐이다.
+       내부 해상도(360x640)와 정확히 같은 크기라 카메라가 전혀 스크롤하지
+       않는다("방 하나 = 화면 하나"). 원점을 (2000,0)으로 멀리 떼어 놓아
+       바깥 지형(나무/모슬링/모스키/달의돌)과 좌표가 절대 겹치지 않는다 —
+       그래서 기존 카메라 컬링 로직(collectProps/renderWater/Enemy.collect
+       등)을 하나도 건드리지 않아도 서로 다른 구역의 오브젝트가 절대
+       화면에 섞여 보이지 않는다. */
+    /* LAZY DINER STEP 4-3a: 카운터 다이너.
+       방 전체를 가로지르는 카운터 하나가 방을 둘로 나눈다.
+         · 북쪽(손님석) — 의자 5개. 손님은 남쪽(카메라 쪽)을 보고 앉아 얼굴이
+           보인다. 카운터와 벽에 막혀 플레이어는 들어갈 수 없다.
+         · 남쪽(주방 통로) — 플레이어가 움직이는 유일한 공간. 화로는 문 바로
+           옆이라 들어오자마자 요리할 수 있고, 두어 걸음이면 카운터에 닿는다.
+       좌표는 모두 다이너 로컬 좌표이며 원점(2000,0)을 더해 월드 좌표가 된다.
+       방이 360x640 화면보다 작아도 카메라 구역 크기(DINER_W/H)는 그대로라
+       카메라는 여전히 고정이다. */
+    buildDinerZone: function () {
+      var W = DINER_W, H = DINER_H;
+      var ox = DINER_ORIGIN_X, oy = DINER_ORIGIN_Y;
+
+      var floor = { x: 50, y: 260, w: 260, h: 190 };   // x 50–310, y 260–450
+      var wallT = 14;
+      var doorW = 50;
+      var doorX0 = floor.x + (floor.w - doorW) / 2;     // 155
+      var doorX1 = doorX0 + doorW;                      // 205
+
+      var counter = { x: floor.x, y: 300, w: floor.w, h: 22 };   // y 300–322, 벽에서 벽까지
+      var stove = { x: 95, y: 422, w: 40, h: 22 };               // 문 서쪽
+      var prep = { x: 225, y: 422, w: 60, h: 22 };                // 문 동쪽(장식 + 훗날 L자 확장 자리)
+      var SEAT_XS = [76, 128, 180, 232, 284];
+      var SEAT_FEET_Y = 296;
+      var SERVE_Y = 311;                                          // 카운터 윗면, 좌석 바로 앞
+
+      var c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      var g = c.getContext('2d');
+
+      // 방 바깥 — 짙게 채워 방 실루엣만 또렷하게
+      g.fillStyle = '#0b0e0c';
+      g.fillRect(0, 0, W, H);
+
+      // 벽
+      g.fillStyle = DINER_PALETTE.wall;
+      g.fillRect(floor.x - wallT, floor.y - wallT, floor.w + wallT * 2, floor.h + wallT * 2);
+      g.fillStyle = DINER_PALETTE.wallDark;
+      g.fillRect(floor.x - wallT, floor.y - wallT, floor.w + wallT * 2, wallT);
+
+      // 바닥 + 널빤지 결
+      g.fillStyle = DINER_PALETTE.floor;
+      g.fillRect(floor.x, floor.y, floor.w, floor.h);
+      g.fillStyle = DINER_PALETTE.floorLine;
+      for (var fy = floor.y + 10; fy < floor.y + floor.h; fy += 18) {
+        g.fillRect(floor.x, fy, floor.w, 1);
+      }
+      // 손님석 바닥은 한 톤 어둡게 — 주방 통로와 "다른 쪽" 임이 읽히게
+      g.fillStyle = 'rgba(20, 12, 6, 0.28)';
+      g.fillRect(floor.x, floor.y, floor.w, counter.y - floor.y);
+
+      // 카운터 위로 떨어지는 따뜻한 등불 한 줄기(구운 그라데이션 — 조명 시스템 아님)
+      var lamp = g.createRadialGradient(180, 305, 8, 180, 305, 150);
+      lamp.addColorStop(0, 'rgba(255, 210, 140, 0.22)');
+      lamp.addColorStop(1, 'rgba(255, 210, 140, 0)');
+      g.fillStyle = lamp;
+      g.fillRect(floor.x, floor.y, floor.w, floor.h);
+
+      // 의자 5개 — 손님석 쪽, 카운터 바로 뒤. 앉은 손님이 있으면 그 몸에 가려진다.
+      for (var si = 0; si < SEAT_XS.length; si++) {
+        var sx = SEAT_XS[si];
+        g.fillStyle = '#2a1c12';
+        g.fillRect(sx - 1, SEAT_FEET_Y - 4, 2, 6);            // 다리
+        g.fillStyle = '#161320';
+        g.fillRect(sx - 8, SEAT_FEET_Y - 11, 16, 8);          // 좌판 윤곽
+        g.fillStyle = '#7a3b2e';
+        g.fillRect(sx - 7, SEAT_FEET_Y - 10, 14, 6);          // 좌판(붉은 가죽)
+        g.fillStyle = '#9a5540';
+        g.fillRect(sx - 7, SEAT_FEET_Y - 10, 14, 1);
+      }
+
+      // 카운터 — 바닥보다 확실히 밝은 윗면 + 어두운 앞면(남쪽) 4px
+      g.fillStyle = '#161320';
+      g.fillRect(counter.x, counter.y - 1, counter.w, counter.h + 1);
+      g.fillStyle = '#a0784a';
+      g.fillRect(counter.x, counter.y, counter.w, counter.h - 4);
+      g.fillStyle = '#c19a66';
+      g.fillRect(counter.x, counter.y, counter.w, 1);
+      g.fillStyle = '#4a3220';
+      g.fillRect(counter.x, counter.y + counter.h - 4, counter.w, 4);
+
+      // 문턱 — 남쪽 벽 틈을 밝은 색으로 표시해 "여기가 출구"임을 알린다
+      g.fillStyle = DINER_PALETTE.doorway;
+      g.fillRect(doorX0, floor.y + floor.h - 2, doorW, wallT + 2);
+      g.fillStyle = DINER_PALETTE.doorwayLight;
+      g.fillRect(doorX0, floor.y + floor.h - 2, doorW, 2);
+
+      // 화로 — 문 서쪽. 애니메이션 없는 고정 물체라 바닥과 함께 구워 넣는다.
+      var stoveCX = stove.x + stove.w / 2, stoveCY = stove.y + stove.h / 2;   // (115, 433)
+      g.fillStyle = '#161320';
+      g.fillRect(stove.x - 1, stove.y - 1, stove.w + 2, stove.h + 2);
+      g.fillStyle = '#2a2a2c';
+      g.fillRect(stove.x, stove.y, stove.w, stove.h);
+      g.fillStyle = '#45454a';
+      g.fillRect(stove.x, stove.y, stove.w, 4);
+      g.fillStyle = '#c9502e';
+      g.fillRect(stoveCX - 12, stoveCY - 2, 7, 6);
+      g.fillRect(stoveCX + 5, stoveCY - 2, 7, 6);
+      g.fillStyle = '#ffb37a';
+      g.fillRect(stoveCX - 11, stoveCY - 1, 5, 4);
+      g.fillRect(stoveCX + 6, stoveCY - 1, 5, 4);
+
+      // 준비대 — 문 동쪽. 도마 하나만 얹은 장식.
+      g.fillStyle = '#161320';
+      g.fillRect(prep.x - 1, prep.y - 1, prep.w + 2, prep.h + 2);
+      g.fillStyle = '#6d4a2e';
+      g.fillRect(prep.x, prep.y, prep.w, prep.h);
+      g.fillStyle = '#8a6a3a';
+      g.fillRect(prep.x, prep.y, prep.w, 3);
+      g.fillStyle = '#d8c39a';
+      g.fillRect(prep.x + 18, prep.y + 7, 20, 9);
+
+      var solidsLocal = [
+        { x: floor.x - wallT, y: floor.y - wallT, w: floor.w + wallT * 2, h: wallT },               // 북쪽 벽
+        { x: floor.x - wallT, y: floor.y + floor.h, w: doorX0 - (floor.x - wallT), h: wallT },       // 남쪽 벽(좌)
+        { x: doorX1, y: floor.y + floor.h, w: (floor.x + floor.w + wallT) - doorX1, h: wallT },      // 남쪽 벽(우)
+        { x: floor.x - wallT, y: floor.y - wallT, w: wallT, h: floor.h + wallT * 2 },                // 서쪽 벽
+        { x: floor.x + floor.w, y: floor.y - wallT, w: wallT, h: floor.h + wallT * 2 },              // 동쪽 벽
+        { x: counter.x, y: counter.y, w: counter.w, h: counter.h },                                  // 카운터(벽에서 벽까지)
+        { x: stove.x, y: stove.y, w: stove.w, h: stove.h },                                          // 화로
+        { x: prep.x, y: prep.y, w: prep.w, h: prep.h }                                               // 준비대
+      ];
+      var solids = [];
+      for (var i = 0; i < solidsLocal.length; i++) {
+        var s = solidsLocal[i];
+        solids.push({ x: s.x + ox, y: s.y + oy, w: s.w, h: s.h });
+      }
+
+      // 화로와 좌석은 달의 돌/보물상자와 같은 "고정 오브젝트" 좌표다 — 구역과
+      // 무관하게 항상 존재하므로 setZone() 으로 바꿔치기할 필요가 없다.
+      this.stove = { x: stoveCX + ox, y: stoveCY + oy };
+
+      // 좌석 5개. 손님 정의는 seat 번호로 이 배열을 가리킨다. 상호작용은 앉은
+      // 손님이 아니라 카운터 위 serve point(좌석 바로 앞)를 기준으로 잰다 —
+      // 주방 통로에서만 닿는 자리다.
+      this.dinerSeats = [];
+      for (var k = 0; k < SEAT_XS.length; k++) {
+        this.dinerSeats.push({
+          x: SEAT_XS[k] + ox, feetY: SEAT_FEET_Y + oy,
+          serveX: SEAT_XS[k] + ox, serveY: SERVE_Y + oy
+        });
+      }
+
+      return {
+        WIDTH: W, HEIGHT: H,
+        originX: ox, originY: oy,
+        ground: c,
+        solids: solids,
+        spawn: { x: 180 + ox, y: 405 + oy },
+        doorTrigger: { x: doorX0 + ox, y: floor.y + floor.h - 10 + oy, w: doorW, h: 20 }   // y 440–460
+      };
     },
 
     /* ------------------------------------------------------- 오브젝트 배치 */
@@ -572,9 +809,12 @@
 
     /* ------------------------------------------------------------ 렌더링 */
 
-    /* 지면 — 카메라 변환이 적용된 상태에서 통째로 blit 한다 (브라우저가 클립) */
+    /* 지면 — 카메라 변환이 적용된 상태에서 통째로 blit 한다 (브라우저가 클립).
+       LAZY DINER STEP 1: 다이너는 원점이 (0,0)이 아니므로(2000,0) 그 원점에
+       맞춰 그려야 카메라와 어긋나지 않는다. 바깥 구역은 originX/Y 가 항상
+       0 이므로 기존과 완전히 동일하게 동작한다. */
     renderGround: function (ctx) {
-      if (this.ground) ctx.drawImage(this.ground, 0, 0);
+      if (this.ground) ctx.drawImage(this.ground, this.originX || 0, this.originY || 0);
     },
 
     /* 물 위 반짝임 — 애니메이션이므로 매 프레임 그린다 (보이는 부분만) */
@@ -647,6 +887,15 @@
           o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
         out.push({ y: o.y, obj: o, kind: 'vineAnchor' });
       }
+
+      // LAZY DINER STEP 1: 다이너 문도 다른 소품과 똑같은 y정렬 대상이다.
+      // 다이너 구역(원점 2000,0)에 있을 때는 카메라가 그쪽에 없으므로 이
+      // 컬링만으로 자연히 화면에서 빠진다 — 별도 구역 분기 없이도 안전하다.
+      o = this.dinerDoorProp;
+      if (o.x >= cam.x - 40 && o.x <= cam.x + cam.w + 40 &&
+          o.y >= cam.y - 60 && o.y <= cam.y + cam.h + 40) {
+        out.push({ y: o.y, obj: o, kind: 'dinerDoor' });
+      }
       return out;
     },
 
@@ -656,6 +905,7 @@
       else if (entry.kind === 'moonstone') this.drawMoonstone(ctx, entry.obj);
       else if (entry.kind === 'treasure') this.drawTreasure(ctx, entry.obj);
       else if (entry.kind === 'vineAnchor') this.drawVineAnchor(ctx, entry.obj);
+      else if (entry.kind === 'dinerDoor') this.drawDinerDoorProp(ctx, entry.obj);
     },
 
     /* PHASE 10 STEP 1: 보물 상자 — 강 건너에서 "저기 뭔가 있다"만 전달하면
@@ -789,6 +1039,40 @@
       ctx.fillRect(x - 1, y - 12, 2, 2);
       ctx.fillRect(x - 5, y - 6, 1, 1);
       ctx.fillRect(x + 4, y - 4, 1, 1);
+      ctx.restore();
+    },
+
+    /* LAZY DINER STEP 1: 바깥에서 보이는 다이너 문. 새 소품을 위한 새 시스템을
+       만들지 않고, 보물상자/덩굴앵커와 완전히 같은 절차적 사각형 그리기
+       방식을 그대로 쓴다. "여기로 들어갈 수 있다"만 전달하면 되므로 안쪽에서
+       새어나오는 따뜻한 빛 하나만 신호로 얹었다. */
+    drawDinerDoorProp: function (ctx, o) {
+      var t = (MG.Game && MG.Game.time) || 0;
+      var x = Math.round(o.x), y = Math.round(o.y);
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 1, 9, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 문틀
+      ctx.fillStyle = '#4a3524';
+      ctx.fillRect(x - 9, y - 22, 18, 22);
+      // 문짝
+      ctx.fillStyle = '#6d4a2e';
+      ctx.fillRect(x - 7, y - 20, 14, 19);
+      ctx.fillStyle = '#8a6a3a';
+      ctx.fillRect(x - 7, y - 20, 14, 3);
+      // 손잡이
+      ctx.fillStyle = '#d9b45a';
+      ctx.fillRect(x + 3, y - 11, 1, 2);
+
+      // 안쪽에서 새어나오는 빛 — 보물상자의 달빛과 같은 발상, 다른 색(따뜻한 빛)
+      var glow = 0.35 + 0.15 * Math.sin(t * 1.6);
+      ctx.save();
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = '#ffe6b0';
+      ctx.fillRect(x - 5, y - 17, 10, 13);
       ctx.restore();
     },
 

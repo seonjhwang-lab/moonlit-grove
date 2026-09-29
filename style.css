@@ -109,6 +109,11 @@ html, body {
 .hud-left  { left:  calc(2.6% + env(safe-area-inset-left)); }
 .hud-right { right: calc(2.6% + env(safe-area-inset-right)); color: var(--mg-ink-dim); }
 
+/* LAZY DINER STEP 2: 하트 줄 바로 아래에 한 줄만 더 — HUD 를 새로 설계하지
+   않고 기존 .hud-slot 규약에 top 값만 하나 더한다. */
+.hud-meat { top: calc(2.2% + 3.6vh + env(safe-area-inset-top)); }
+.hud-ramen { top: calc(2.2% + 7.2vh + env(safe-area-inset-top)); }
+
 /* PHASE 9.3: 플레이 중 HUD 에는 버전을 보이지 않는다 — 우상단의 "v0.1.11" 은
    개발 빌드처럼 보였다. 요소와 ui.js 의 갱신 로직은 그대로 둔다(버전은 여전히
    MG.Game.VERSION 에서 이 요소로 흘러 들어온다). 플레이어에게 보이는 버전은
@@ -171,6 +176,85 @@ html, body {
   transform: translate(-50%, 0);
 }
 .hud-toast[hidden] { display: none; }
+
+/* --------------------------------------------------------------------------
+   LAZY DINER STEP 4-1/4-3b: 손님과의 짧은 대화.
+   · .speech-layer — 화면(뷰포트) 전체를 덮는 투명한 탭 받이. 조이스틱 영역과
+     같은 position: fixed 방식이라 스테이지 밖 여백을 눌러도 받는다. 대화가
+     열려 있을 때만 존재한다(hidden 이면 display: none 이라 게임 입력에 전혀
+     간섭하지 않는다).
+   · .speech-box — 보여주기만 하는 패널(pointer-events: none). 스테이지 아래쪽
+     (약 76~94%)에 두어 위쪽의 손님 얼굴/카운터/라면 그릇/유리병을 가리지 않는다.
+     대화 중에는 조이스틱/버튼을 모두 감추므로(body.mg-talking) 겹치는 조작이 없다.
+   -------------------------------------------------------------------------- */
+
+.speech-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+}
+.speech-layer[hidden] { display: none; }
+
+.speech-box {
+  position: absolute;
+  left: 50%;
+  bottom: calc(6% + env(safe-area-inset-bottom));
+  transform: translate(-50%, 0);
+  width: max-content;
+  max-width: 88%;
+  min-width: 60%;
+  padding: 0.7em 1.1em;
+  font-family: inherit;
+  text-align: left;
+  color: var(--mg-ink);
+  background: var(--mg-panel);
+  border: 1px solid rgba(207, 228, 255, 0.4);
+  border-radius: 8px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 25;
+}
+.speech-box[hidden] { display: none; }
+
+/* 대화 중에는 게임 조작이 대화로 완전히 넘어간다 — 조이스틱/버튼을 모두
+   감춘다(mg-complete 와 같은 방식). 화면 어디를 눌러도 대화가 받으므로
+   버튼이 있던 자리를 누르는 일도 다음 줄로 넘기는 일이 된다. */
+body.mg-talking #joystick-zone,
+body.mg-talking .joystick-base,
+body.mg-talking .attack-button,
+body.mg-talking .interact-button,
+body.mg-talking .ability-button {
+  display: none;
+}
+
+.speech-name {
+  display: block;
+  margin-bottom: 0.35em;
+  font-size: clamp(11px, 2.1vh, 15px);
+  letter-spacing: 0.1em;
+  color: var(--mg-leaf);
+}
+
+.speech-text {
+  display: block;
+  font-size: clamp(13px, 2.6vh, 19px);
+  line-height: 1.5;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.speech-hint {
+  display: block;
+  margin-top: 0.4em;
+  text-align: right;
+  font-size: 11px;
+  color: var(--mg-ink-dim);
+  opacity: 0.7;
+}
 
 /* --------------------------------------------------------------------------
    완료 문구 (PHASE 8.1) — 정화가 끝나면 떠서 계속 남는다.
@@ -524,6 +608,13 @@ body.mg-complete .joystick-base,
 body.mg-complete .attack-button,
 body.mg-complete .interact-button,
 body.mg-complete .ability-button {
+  display: none;
+}
+
+/* LAZY DINER STEP 4-3a: 다이너는 전투 없는 안전지대 — 공격 버튼을 감춘다.
+   game.js 의 syncZoneClass() 가 구역이 바뀔 때마다 mg-diner 를 켜고 끈다.
+   (공격 입력 자체는 game.js 가 이 구역에서 무시한다 — 버튼만 숨기는 게 아니다) */
+body.mg-diner .attack-button {
   display: none;
 }
 

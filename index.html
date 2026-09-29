@@ -34,12 +34,31 @@
         <!-- HUD: 좌상단 하트(PHASE 7), 우상단 버전 -->
         <div id="hud">
           <div id="hud-hearts" class="hud-slot hud-left"></div>
+          <!-- LAZY DINER STEP 2: 하트 바로 아래, 아주 작은 고기 개수 표시.
+               기존 HUD 슬롯 규약(.hud-slot .hud-left) 을 그대로 쓰고,
+               자리만 .hud-meat 로 한 줄 내린다. -->
+          <div id="hud-meat" class="hud-slot hud-left hud-meat">🍖 0</div>
+          <!-- LAZY DINER STEP 3: 고기 바로 아래, 요리 결과물 개수. -->
+          <div id="hud-ramen" class="hud-slot hud-left hud-ramen">🍜 0</div>
           <div id="hud-version" class="hud-slot hud-right">v0.1.11</div>
         </div>
 
         <!-- PHASE 8: 임시 알림(달의 돌 발견 등). ui.js 의 showToast() 가
              내용을 채우고 스스로 사라진다 — 상시 목표 패널이 아니다. -->
         <div id="hud-toast" class="hud-toast" hidden></div>
+
+        <!-- LAZY DINER STEP 4-1/4-3b: 손님과의 짧은 대화.
+             #speech-layer 는 화면 전체를 덮는 투명한 탭 받이다 — 대화가 열려
+             있는 동안에만 보이고, 어디를 눌러도(대화 상자 위든 아니든) 다음 줄로
+             넘어간다. #speech-box 는 보여주기만 하는 패널(pointer-events: none)이라
+             그 위를 눌러도 아래 레이어가 받는다 — 리스너가 한 곳뿐이라 한 번 누르면
+             정확히 한 줄이다. 다이얼로그 엔진이 아니다. -->
+        <div id="speech-layer" class="speech-layer" hidden></div>
+        <div id="speech-box" class="speech-box" hidden>
+          <span id="speech-name" class="speech-name"></span>
+          <span id="speech-text" class="speech-text"></span>
+          <span class="speech-hint">▼</span>
+        </div>
 
         <!-- PHASE 8.1: 정화 완료 문구. 잠깐 떴다 스스로 사라지며 조작을
              가리지 않는다(pointer-events: none). 게임 오버 메뉴가 아니다. -->
@@ -88,17 +107,18 @@
              MG.Game.gameComplete 를 읽어 MG.UI.showComplete() 가 띄우는 표시
              전용 계층이다 — 버튼도, 입력도, 게임 상태도 여기에 없다.
              타이틀 화면과 같은 .overlay / .overlay-inner 구조를 그대로 재사용한다.
-             가운데 문구는 GAME_DESIGN.md 2장 "핵심 게임 경험"이 이 루프의 마지막
-             감정으로 직접 적어둔 문장이다 — 새로 지어낸 이야기가 아니다. -->
+             STEP 5: 문구는 Lazy Diner 의 것이다 — 이번 판에 실제로 한 일(고기 →
+             고기라면 → 단서)만 목록으로 보여준다. -->
         <div id="overlay-complete" class="overlay overlay-complete" hidden>
           <div class="overlay-inner">
-            <p class="complete-eyebrow">달빛 숲의 수호자</p>
-            <p class="complete-line">“드디어 저곳에 도착했다.”</p>
+            <p class="complete-eyebrow">Lazy Diner · Prototype 0.1</p>
+            <p class="complete-line">“그날 밤, 처음으로 누군가 내 라면을 먹었다.”</p>
             <ul class="complete-list">
-              <li>모스키</li>
-              <li>덩굴 다리</li>
-              <li>달빛 조각</li>
+              <li>🍖 고기</li>
+              <li>🍜 고기라면</li>
+              <li>💧 북쪽 저수지</li>
             </ul>
+            <p class="complete-footer">— 계속 —</p>
             <!-- PHASE 12 ROOT-CAUSE FIX: 피드백 폼은 이 안에 두지 않는다.
                  완료 화면은 #game-root(position:fixed) 안에 있고 body 는
                  overflow:hidden / touch-action:none 이라, 안드로이드 Chrome 이
@@ -169,6 +189,7 @@
   <script src="js/player.js?v=0.1.11"></script>
   <script src="js/enemy.js?v=0.1.11"></script>
   <script src="js/companion.js?v=0.1.11"></script>
+  <script src="js/customer.js?v=0.1.11"></script>
   <script src="js/feedback.js?v=0.1.11"></script>
   <script src="js/ui.js?v=0.1.11"></script>
   <script src="js/game.js?v=0.1.11"></script>

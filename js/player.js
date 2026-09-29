@@ -50,6 +50,221 @@
   var ATTACK_ASSIST_HOLD = 0.24;   // 초 — 명중 직후 보정된 facing 을 유지하는 시간 (0.18 → 0.24)
   var DEBUG_ATTACK_ASSIST = false; // true 로 바꾸면 선택된 대상/보정 방향/타이머를 표시
 
+  // STEP 9-2b: 스프라이트 시트 렌더링. 이미지가 아직 로드되지 않았거나 실패하면
+  // 기존 절차적 렌더링(drawFront/drawBack/drawSide)을 그대로 fallback 으로 쓴다.
+  // base64 로 인라인하는 이유: 파일 경로(dist/, Claude Artifact 등 여러 배포
+  // 형태)마다 상대경로가 달라지는 문제 없이, build.sh 번들에도 그대로 실려
+  // 어디서든 같은 방식으로 로드된다.
+  var SPRITE_COLS = 4;
+  var SPRITE_FRAME_W = 32;
+  var SPRITE_FRAME_H = 32;
+  var SPRITE_FOOT_ROW = 30;   // 스프라이트 안에서 발이 닿는 픽셀 행(0-index, 31행은 투명 여백)
+
+  var SPRITE_FRAME_INDEX = {
+    down:  { false: 0, true: 1 },
+    up:    { false: 2, true: 3 },
+    left:  { false: 4, true: 5 },
+    right: { false: 6, true: 7 }
+  };
+
+  var spriteImage = new Image();
+  var spriteCanvas = null;   // 검을 지운 시트 — 준비되면 drawSprite() 가 이걸 대신 그린다
+  // STEP 4-3b: 위 시트에서 검의 "빈 윤곽선"까지 마저 지운 시트. 다이너에서만 쓴다.
+  var spriteCanvasNoSword = null;
+  var spriteReady = false;
+  spriteImage.onload = function () {
+    try {
+      spriteCanvas = stripBakedSword(spriteImage);
+    } catch (e) {
+      spriteCanvas = null;   // 실패해도 원본 이미지(검 포함)로라도 그린다 — 캐릭터가 안 보이는 것보다는 낫다
+    }
+    try {
+      if (spriteCanvas) spriteCanvasNoSword = stripSwordOutline(spriteCanvas);
+    } catch (e2) {
+      spriteCanvasNoSword = null;   // 실패하면 다이너에서도 spriteCanvas 로 그린다
+    }
+    spriteReady = true;
+  };
+  spriteImage.onerror = function () { spriteReady = false; };
+  spriteImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABACAYAAADS1n9/AAAAAXNSR0IArs4c6QAAA/1JREFUeJztnb1uGkEQxwfkwj0Sgo7CnSVw5yJKl8hSmiRVqBxXKdMgqHmAVHmAFKlwk48mEko6ROMOS06Vgu4iJJ7hXMCS43K3N7s3uwO386swLPuf3Zvbmxtu1gCCIIRLDduw2ejEJh2v1kt036LPp39i0ulZC9fuz1+TXkWfU79ubY1QCcQBAsfoEvDl0xjVrvsC184Ubv0qYuQAVCQDGupgyae+utZir82HqG91CUifYTZn3HQ+g+l8ZiPPrq84a5lP/qHpWznA/Y+x9m/XcOtXCe9BYLPRiZXnXz156lte9FP6RjEAd3DFre/q/p5THxWAmGahFOkAJ+19ugDIVpNKn8KWYxh/7gqQNqDd7xmJR5NF6WhXaUaThXf9UMavjQHa/Z6xcN73bc++MpTVD2H8kgkMHKeJoGiy2L327f2ij9N36gDPXr5y2b3oE+g7dYCL0zsAAHj+/hbAs/eLPk4f7QDn9w9G4pFR62ym168BAKA7WbDoJ6nq+LUOkDTAhuu37zbf9+z5VPohjB+9Ajx0z83Uf9tNmmK1XtZalzcA21sY3/ppqjr+XAdIG2CmvqF1eePd66n0Qxm/11SoLaLvTl8SQYGDjgGyHjzQPZFC+csVpv+sNqu1HxuOefyyAgSOOEDgiAMEjjhA4KCDQF1Q4/pRKUz/nDaEMH5BEAShchSmCjFpSJe/dHHr6+C2jUIfFQTqyo98BB/c+jq4bSurL7eBgSMOEDioS4CuLt9HuRa3vg5u28rqywoQOGgH4D7TuPVN4LbVRB+dCnZZg4+pYTumPQC4bdXpp+f6JOtN9ybuG8RZL+8b7u1xYL9KKK4VFS36SHZk2WDyHNwxJYIoi0RN5yhLu75aL2vqzJvOZ7tOm41OjBWgqGUv0x+1PqVmch65Dr6ufWYMkNVYVyYdWRZOKLZOGKuNi5RDYuvjy+rbYmKTCyct0k/OH+QUiNbh3wHYawQE9fGhk54/jgrhIg4mD5DlhNFkwXZ2V4Hk/BWWh2ctw5yTnyxt/vX9G5sdZeDeH6BUeTjHAUg64XA0gJ8f32z0vajTw70/AKY8fO8SkFyGh6MBXJze7ToRzFHzNxwNAA7s2q8g2R+AshZfrQKQyGh9uB170zeB26Yi/WR5OOTkS/5zgLwDIJiDOQDc0OwPQFyLryYKXR9PrI+F26YifUx5eKYDqLTh1eevABabJFLQbHTiY85BtPs9UPMHDGd/u9+DNvRi2N6N5OmTbVV6LP8kiQpu+6j0DyYRJPCgjQHy6tLT77t4+rWoJj79OeVeAFiy5sH1XgE67bzPQDM/sgIEjjhA4IgDBI44QOBog8C84MVHyVORBndJWJ4Nvuzi3K9AqBCPGBETB77xlgsAAAAASUVORK5CYII=';
+
+  // STEP 9-2c: 스프라이트에 원래 그려져 있던 검(허리에 찬 칼)을 지운다.
+  // 공격 중엔 drawAttackSwing() 이 유일한 검이어야 하므로, idle/walk 스프라이트에
+  // 남아있는 baked-in 검이 겹쳐 보이면 "칼을 두 자루 든 것"처럼 보였다.
+  //
+  // 실제 시트(player-spritesheet.png)를 8프레임 전부 픽셀 단위로 조사한 결과,
+  // 검(날 + 자루)에만 쓰이는 색 3개(#cfd8e3 날, #5a6270 날 그림자, #8a6a3a 손잡이)를
+  // 확인했다 — 이 3색은 8프레임 어디에서도 몸(피부/머리/튜닉/그림자)에는 쓰이지
+  // 않는다. 이 색만 지우면 검 테두리(윤곽선 색 #161320)만 빈 껍데기로 남으므로,
+  // "몸의 실제 채색과 맞닿지 않은 윤곽선 픽셀"까지 함께 지운다 — 몸의 윤곽선은
+  // 반드시 몸 채색과 맞닿아 있으므로 이 조건으로는 절대 잘못 지워지지 않는다
+  // (PowerShell로 8프레임 전부 시뮬레이션해 몸 실루엣이 그대로 남는 것을 먼저
+  // 확인했다). 원본 애니메이션 파일(.aseprite)은 건드리지 않는다 — 로드된
+  // PNG를 한 번(로드 시) 복사해 이 처리를 적용한 별도 캔버스에만 반영한다.
+  var SPRITE_OUTLINE_COLOR = '161320';
+  var SPRITE_SWORD_COLORS = { 'cfd8e3': true, '5a6270': true, '8a6a3a': true };
+  var SPRITE_BODY_FILL_COLORS = { '3a2b20': true, 'e8c9a0': true, '2f6b4f': true, '5a3d24': true };
+
+  function hex2(n) {
+    var s = n.toString(16);
+    return s.length < 2 ? '0' + s : s;
+  }
+
+  /* 프레임 하나(w x h, 시트 안 절대좌표 ox,oy)에서 검 색상과, 몸에 닿지 않은
+     검 전용 윤곽선을 찾아 알파를 0으로 만든다. 프레임 경계 밖은 절대 보지
+     않는다(옆 프레임과 잘못 이어붙지 않도록). */
+  function cleanFrameSword(cctx, ox, oy, w, h) {
+    var imgData = cctx.getImageData(ox, oy, w, h);
+    var data = imgData.data;
+
+    function colorAt(x, y) {
+      var i = (y * w + x) * 4;
+      if (data[i + 3] === 0) return null;
+      return hex2(data[i]) + hex2(data[i + 1]) + hex2(data[i + 2]);
+    }
+
+    var remove = new Uint8Array(w * h);
+    var x, y, dx, dy;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        var c0 = colorAt(x, y);
+        if (c0 && SPRITE_SWORD_COLORS[c0]) remove[y * w + x] = 1;
+      }
+    }
+
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+          var idx = y * w + x;
+          if (remove[idx]) continue;
+          if (colorAt(x, y) !== SPRITE_OUTLINE_COLOR) continue;
+
+          var touchesBody = false;
+          for (dy = -1; dy <= 1 && !touchesBody; dy++) {
+            for (dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              var nx = x + dx, ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              var nc = colorAt(nx, ny);
+              if (nc && SPRITE_BODY_FILL_COLORS[nc]) { touchesBody = true; break; }
+              if (nc === SPRITE_OUTLINE_COLOR && !remove[ny * w + nx]) { touchesBody = true; break; }
+            }
+          }
+          if (!touchesBody) { remove[idx] = 1; changed = true; }
+        }
+      }
+    }
+
+    for (var p = 0; p < w * h; p++) {
+      if (remove[p]) data[p * 4 + 3] = 0;
+    }
+    cctx.putImageData(imgData, ox, oy);
+  }
+
+  function stripBakedSword(img) {
+    var canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    var cctx = canvas.getContext('2d');
+    cctx.drawImage(img, 0, 0);
+
+    var cols = Math.floor(canvas.width / SPRITE_FRAME_W);
+    var rows = Math.floor(canvas.height / SPRITE_FRAME_H);
+    for (var fr = 0; fr < rows; fr++) {
+      for (var fc = 0; fc < cols; fc++) {
+        cleanFrameSword(cctx, fc * SPRITE_FRAME_W, fr * SPRITE_FRAME_H, SPRITE_FRAME_W, SPRITE_FRAME_H);
+      }
+    }
+    return canvas;
+  }
+
+  /* STEP 4-3b: 위의 stripBakedSword 는 칼날/손잡이의 "채움"만 지웠고, 칼을
+     둘러싼 윤곽선(#161320)은 남겼다 — 화면에서는 몸 오른쪽에 속이 빈 칼 모양이
+     그대로 보였다(다이너에서 "칼이 아직 보인다"의 정체). 안전지대에서는 그
+     윤곽선 잔재도 없어야 하므로, 몸의 실제 채색(피부/머리/튜닉/그림자)과 8방향으로
+     한 칸도 맞닿지 않은 윤곽선 픽셀을 모두 지운 두 번째 시트를 만든다.
+     몸의 윤곽선은 항상 몸 채색과 맞닿아 있으므로 지워지지 않는다(손 옆의
+     윤곽선도 손 채색과 맞닿아 남는다). 연쇄 제거가 아니라 픽셀마다 독립적인
+     판정이라 결과가 순서에 의존하지 않는다. 숲(바깥)은 기존 시트를 그대로
+     써서 겉모습이 전혀 바뀌지 않는다. */
+  function cleanFrameOutline(cctx, ox, oy, w, h) {
+    var imgData = cctx.getImageData(ox, oy, w, h);
+    var data = imgData.data;
+
+    function colorAt(x, y) {
+      var i = (y * w + x) * 4;
+      if (data[i + 3] === 0) return null;
+      return hex2(data[i]) + hex2(data[i + 1]) + hex2(data[i + 2]);
+    }
+
+    // 몸의 좌우 범위(채색이 있는 가장 왼쪽/오른쪽 열). 칼은 항상 몸 옆으로 튀어나와
+    // 있으므로, 이 범위 "밖"에 있는 윤곽선만 후보로 삼는다 — 걷기 프레임에서 두 다리
+    // 사이의 어두운 틈(자기 윤곽선 없이 4칸 폭으로 이어진 #161320)처럼 범위 "안"에
+    // 있는 픽셀은 채색과 맞닿지 않아도 몸의 일부라 지우면 안 된다.
+    // 범위는 프레임 전체가 아니라 그 줄 위아래 3줄 안에서만 잰다: 걷기 자세에서는
+    // 앞다리 장화가 한 칸 더 넓어 프레임 전체 범위를 쓰면 손 옆의 칼 윤곽선이
+    // "몸 안"으로 잘못 분류됐다.
+    var rowMin = [], rowMax = [];
+    var x, y, dx, dy;
+    for (y = 0; y < h; y++) {
+      var mn = w, mx = -1;
+      for (x = 0; x < w; x++) {
+        var fc0 = colorAt(x, y);
+        if (fc0 && SPRITE_BODY_FILL_COLORS[fc0]) {
+          if (x < mn) mn = x;
+          if (x > mx) mx = x;
+        }
+      }
+      rowMin.push(mn);
+      rowMax.push(mx);
+    }
+
+    var drop = [];
+    for (y = 0; y < h; y++) {
+      var winMin = w, winMax = -1;
+      for (var wy = Math.max(0, y - 3); wy <= Math.min(h - 1, y + 3); wy++) {
+        if (rowMin[wy] < winMin) winMin = rowMin[wy];
+        if (rowMax[wy] > winMax) winMax = rowMax[wy];
+      }
+      for (x = 0; x < w; x++) {
+        if (colorAt(x, y) !== SPRITE_OUTLINE_COLOR) continue;
+        if (x >= winMin - 1 && x <= winMax + 1) continue;   // 몸의 좌우 범위 안 — 건드리지 않는다
+        var touchesFill = false;
+        for (dy = -1; dy <= 1 && !touchesFill; dy++) {
+          for (dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            var nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            var nc = colorAt(nx, ny);
+            if (nc && SPRITE_BODY_FILL_COLORS[nc]) { touchesFill = true; break; }
+          }
+        }
+        if (!touchesFill) drop.push((y * w + x) * 4 + 3);
+      }
+    }
+    for (var k = 0; k < drop.length; k++) data[drop[k]] = 0;
+    cctx.putImageData(imgData, ox, oy);
+  }
+
+  function stripSwordOutline(src) {
+    var canvas = document.createElement('canvas');
+    canvas.width = src.width;
+    canvas.height = src.height;
+    var cctx = canvas.getContext('2d');
+    cctx.drawImage(src, 0, 0);
+
+    var cols = Math.floor(canvas.width / SPRITE_FRAME_W);
+    var rows = Math.floor(canvas.height / SPRITE_FRAME_H);
+    for (var fr = 0; fr < rows; fr++) {
+      for (var fc = 0; fc < cols; fc++) {
+        cleanFrameOutline(cctx, fc * SPRITE_FRAME_W, fr * SPRITE_FRAME_H, SPRITE_FRAME_W, SPRITE_FRAME_H);
+      }
+    }
+    return canvas;
+  }
+
   // LUKA 고유 팔레트 — 기존 판타지 캐릭터와 겹치지 않는 배색
   var C = {
     skin:        '#e8b98a',
@@ -372,11 +587,22 @@
         ctx.globalAlpha = phase ? 1.0 : BLINK_ALPHA_LOW;
       }
 
-      if (bodyFacing === 'down') this.drawFront(ctx, cx, topY, stepOffset, this.attacking);
-      else if (bodyFacing === 'up') this.drawBack(ctx, cx, topY, stepOffset, this.attacking);
-      else this.drawSide(ctx, cx, topY, stepOffset, bodyFacing === 'right', this.attacking);
+      // STEP 4-3b: 다이너는 칼이 없는 안전지대다 — 구역 하나가 유일한 기준이다.
+      // 스윙 그리기와 절차적 폴백의 허리 칼(attacking 인자가 true 면 안 그린다)을
+      // 여기서 함께 막는다. 스프라이트 쪽은 drawSprite() 가 같은 기준으로 시트를 고른다.
+      var inDiner = !!(MG.Map && MG.Map.zone === 'diner');
+      var swordHidden = this.attacking || inDiner;
 
-      if (this.attacking && MG.Combat) {
+      if (spriteReady) {
+        // STEP 9-2b: 걷기 애니메이션은 이제 프레임 자체(IDLE/WALK)가 표현하므로
+        // 절차적 경로의 bob(상하 흔들림)은 스프라이트에는 적용하지 않는다 —
+        // 발 위치는 항상 feetY(this.y) 그대로다.
+        this.drawSprite(ctx, cx, feetY);
+      } else if (bodyFacing === 'down') this.drawFront(ctx, cx, topY, stepOffset, swordHidden);
+      else if (bodyFacing === 'up') this.drawBack(ctx, cx, topY, stepOffset, swordHidden);
+      else this.drawSide(ctx, cx, topY, stepOffset, bodyFacing === 'right', swordHidden);
+
+      if (this.attacking && MG.Combat && !inDiner) {
         var progress = this.attackT / MG.Combat.ATTACK_DURATION;
         this.drawAttackSwing(ctx, cx, topY, swordFacing, progress);
       }
@@ -405,6 +631,25 @@
         );
         ctx.restore();
       }
+    },
+
+    /* STEP 9-2b: 스프라이트 시트에서 facing × moving 에 해당하는 32x32 프레임
+       하나를 잘라 그대로(스케일 없이) 그린다. 시트의 30행이 시각적 발 위치이므로
+       dy = feetY - SPRITE_FOOT_ROW 로 맞추면 기존 발 앵커(this.y)와 일치한다. */
+    drawSprite: function (ctx, cx, feetY) {
+      var entry = SPRITE_FRAME_INDEX[this.facing] || SPRITE_FRAME_INDEX.down;
+      var idx = entry[this.moving] !== undefined ? entry[this.moving] : entry[false];
+      var col = idx % SPRITE_COLS;
+      var row = Math.floor(idx / SPRITE_COLS);
+      var sx = col * SPRITE_FRAME_W;
+      var sy = row * SPRITE_FRAME_H;
+      var dx = Math.round(cx - SPRITE_FRAME_W / 2);
+      var dy = Math.round(feetY - SPRITE_FOOT_ROW);
+      // 다이너(안전지대)에서는 칼의 빈 윤곽선까지 지운 시트를 쓴다(STEP 4-3b).
+      // 그 시트가 없으면(처리 실패 시) 기존 시트로, 그것도 없으면 원본이라도.
+      var inDiner = !!(MG.Map && MG.Map.zone === 'diner');
+      var source = (inDiner && spriteCanvasNoSword) || spriteCanvas || spriteImage;
+      ctx.drawImage(source, sx, sy, SPRITE_FRAME_W, SPRITE_FRAME_H, dx, dy, SPRITE_FRAME_W, SPRITE_FRAME_H);
     },
 
     /* PHASE 7: 사망 연출 — 새 아트 없이 기존 drawFront/Back/Side 를 캔버스
